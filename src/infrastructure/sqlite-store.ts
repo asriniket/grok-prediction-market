@@ -20,6 +20,12 @@ import type {
   Trade,
 } from "../domain/types.js";
 
+/**
+ * NOTE: no longer on the runtime path. The app runs on PostgresStore against
+ * shared Neon; this remains ONLY for the in-memory unit tests, where a local
+ * file is the right tool — running unit tests against the shared book would be
+ * slow and would let tests mutate live market data.
+ */
 type Row = Record<string, unknown>;
 
 function now(): string {

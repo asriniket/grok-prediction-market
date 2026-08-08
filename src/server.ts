@@ -3,7 +3,7 @@ import { loadConfig } from "./config.js";
 import { GrokClaimExtractor, UnavailableClaimExtractor } from "./services/claim-extractor.js";
 import { EventBus } from "./services/event-bus.js";
 import { MarketService } from "./services/market-service.js";
-import { SqliteStore } from "./infrastructure/sqlite-store.js";
+import { PostgresStore } from "./infrastructure/postgres-store.js";
 import { BotRegistry, XOAuthService } from "./integrations/x-oauth.js";
 import { XBotService } from "./services/x-bot-service.js";
 import { SessionStore } from "./services/session-store.js";
@@ -11,7 +11,8 @@ import { DemoMarketPulse } from "./services/demo-market-pulse.js";
 import { mountBroadcast } from "./broadcast/mount.js";
 
 const config = loadConfig();
-const store = new SqliteStore(config.databasePath);
+const store = new PostgresStore(config.databaseUrl);
+await store.migrate();
 const events = new EventBus();
 const extractor = config.xaiApiKey
   ? new GrokClaimExtractor(config.xaiApiKey, config.xaiModel)
@@ -19,7 +20,7 @@ const extractor = config.xaiApiKey
 const markets = new MarketService(store, extractor, events);
 const sessions = new SessionStore();
 const bots = new BotRegistry(
-  store.getBotCredentials()
+  (await store.getBotCredentials())
     ?? (process.env.X_BOT_USER_ID && process.env.X_BOT_ACCESS_TOKEN
       ? { userId: process.env.X_BOT_USER_ID, accessToken: process.env.X_BOT_ACCESS_TOKEN }
       : undefined),
@@ -56,8 +57,7 @@ function shutdown(): void {
   broadcast?.stop();
   demoPulse.stop();
   server.close(() => {
-    store.close();
-    process.exit(0);
+    void store.close().finally(() => process.exit(0));
   });
 }
 
