@@ -68,7 +68,7 @@ Balance from launch forward is P&L. High-karma accounts with bad calibration ble
 
 Two recurring synthetic champions, visually identical across every market the system creates. Not deepfakes of real people — the *arguments* are real and attributed, the *messengers* are not.
 
-Working names: **VERA** (affirmative) and **KANE** (negative). Lock whatever you pick; they're the brand.
+Names and character treatment are deliberately owned by the livestream workstream. The market-flow bot is a single, separate X account.
 
 ### Why synthetic, not real faces
 
