@@ -73,7 +73,7 @@ export async function renderVoiceover(line: string, id: string, speaker: Speaker
     const path = resolve(OUT_DIR, file);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, wav(pcm));
-    return { audioPath: `/media/${file}`, seconds: pcm.length / 48000, renderMs: Date.now() - started };
+    return { audioPath: `/live/media/${file}`, seconds: pcm.length / 48000, renderMs: Date.now() - started };
   } finally {
     s.close();
   }
