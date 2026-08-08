@@ -109,7 +109,7 @@ export async function generateSpeakerClip(
  */
 export async function ensureIdleLoop(): Promise<string> {
   const out = resolve(process.cwd(), 'public/media/anchor-idle.mp4');
-  if (existsSync(out)) return '/media/anchor-idle.mp4';
+  if (existsSync(out)) return '/live/media/anchor-idle.mp4';
 
   const ref = anchorReference();
   const submitted = await xai.post<{ request_id?: string; id?: string }>('/videos/generations', {
@@ -131,7 +131,7 @@ export async function ensureIdleLoop(): Promise<string> {
       const bytes = Buffer.from(await (await fetch(p.video.url)).arrayBuffer());
       mkdirSync(dirname(out), { recursive: true });
       writeFileSync(out, bytes);
-      return '/media/anchor-idle.mp4';
+      return '/live/media/anchor-idle.mp4';
     }
     if (['failed', 'error'].includes(status)) throw new Error('idle loop generation failed');
   }

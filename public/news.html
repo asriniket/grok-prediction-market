@@ -134,7 +134,7 @@
   </div>
 
   <div class="shot">
-    <img id="poster" src="/assets/champions/anchor.jpg" alt="" />
+    <img id="poster" src="/live/assets/champions/anchor.jpg" alt="" />
     <video id="idle" autoplay muted loop playsinline></video>
     <video id="talk" autoplay playsinline></video>
     <div class="vig"></div>
@@ -412,7 +412,7 @@ function apply(msg){
 
 let ws;
 function connect(){
-  ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
+  ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/live/ws`);
   ws.onmessage=(m)=>apply(JSON.parse(m.data));
   ws.onclose=()=>setTimeout(connect,1500);
 }
