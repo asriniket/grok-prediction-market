@@ -34,6 +34,13 @@ const styles = `
   .nav-links a:hover { opacity: 1; }
   .nav-links a.live { opacity: 1; display: inline-flex; align-items: center; gap: 7px; }
   .nav-links a.live i { width: 7px; height: 7px; border-radius: 50%; background: #e5484d; animation: livepulse 1.4s infinite; }
+  .signin { display: inline-flex; align-items: center; gap: 8px; padding: 8px 15px; border-radius: 999px; text-decoration: none;
+            background: var(--ink); color: var(--panel); font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .signin:hover { opacity: .88; }
+  .signin svg { width: 13px; height: 13px; fill: currentColor; }
+  .whoami { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .whoami b { color: var(--ink); }
+  .whoami .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); }
   @keyframes livepulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
   .brand { text-decoration: none; font-weight: 800; letter-spacing: -.06em; font-size: 24px; }.brand i { color: var(--lime); font-style: normal; }
   .tag { border: 1px solid var(--line); color: var(--muted); padding: 6px 10px; border-radius: 999px; font-size: 12px; }
@@ -58,13 +65,29 @@ const styles = `
   @media (max-width: 760px) { .market-grid { grid-template-columns: 1fr; margin-top: 28px; }.facts { grid-template-columns: 1fr; }.shell { padding-inline: 15px; }.nav { padding-bottom: 16px; } }
 `;
 
-function layout(content: string, title: string): string {
-  return `<!doctype html>
-  <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Threadline</title><style>${styles}</style></head>
-  <body><main class="shell"><nav class="nav"><a href="/" class="brand">thread<i>line</i></a><span class="nav-links"><a href="/">Markets</a><a href="/live" class="live"><i></i>Live</a></span><span class="tag">play credits · no cash-out</span></nav>${content}</main></body></html>`;
+/** X's mark, so the button reads as an X sign-in rather than a generic link. */
+const X_MARK = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2H22l-7.1 8.1L23.2 22h-6.5l-5.1-6.7L5.8 22H2.7l7.6-8.7L1.2 2h6.7l4.6 6.1L18.9 2Zm-1.1 18h1.7L7.3 3.8H5.5L17.8 20Z"/></svg>`;
+
+/**
+ * The sign-in button points at /auth/x/connect/start, NOT /auth/x/start.
+ * The latter is startBot() — it authorises the market bot account, so exposing
+ * it as a public login would let any visitor overwrite the bot's credentials
+ * with their own. startTrader() is the visitor path.
+ */
+function navAuth(account: Account | null): string {
+  if (account) {
+    return `<span class="whoami"><span class="dot"></span>Signed in as <b>@${escapeHtml(account.handle.replace(/^@/, ""))}</b></span>`;
+  }
+  return `<a class="signin" href="/auth/x/connect/start">${X_MARK}Sign in with X</a>`;
 }
 
-export function marketIndexPage(markets: MarketSnapshot[]): string {
+function layout(content: string, title: string, account: Account | null = null): string {
+  return `<!doctype html>
+  <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Threadline</title><style>${styles}</style></head>
+  <body><main class="shell"><nav class="nav"><a href="/" class="brand">thread<i>line</i></a><span class="nav-links"><a href="/">Markets</a><a href="/live" class="live"><i></i>Live</a></span>${navAuth(account)}</nav>${content}</main></body></html>`;
+}
+
+export function marketIndexPage(markets: MarketSnapshot[], account: Account | null = null): string {
   const cards = markets.length === 0
     ? `<p class="empty">No markets yet. Mention the bot with <b>market this</b> to create the first one.</p>`
     : markets.map(({ market, priceYes, priceNo }) => `
@@ -73,7 +96,7 @@ export function marketIndexPage(markets: MarketSnapshot[]): string {
         <h2>${escapeHtml(market.question)}</h2>
         <div class="prices"><div class="price yes"><span>YES</span><b>${percent(priceYes)}</b></div><div class="price no"><span>NO</span><b>${percent(priceNo)}</b></div></div>
       </a>`).join("");
-  return layout(`<section class="list"><div><span class="eyebrow">Prediction markets from X conversations</span><h1 style="font-size:clamp(42px,7vw,84px);margin-bottom:8px">Every argument has odds.</h1><p style="color:var(--muted);max-width:620px">Threadline turns public arguments into live markets. Your account history seeds play credits; your trades move the odds.</p></div>${cards}</section>`, "Markets");
+  return layout(`<section class="list"><div><span class="eyebrow">Prediction markets from X conversations</span><h1 style="font-size:clamp(42px,7vw,84px);margin-bottom:8px">Every argument has odds.</h1><p style="color:var(--muted);max-width:620px">Threadline turns public arguments into live markets. Your account history seeds play credits; your trades move the odds.</p></div>${cards}</section>`, "Markets", account);
 }
 
 export function marketPage(snapshot: MarketSnapshot, account: Account | null, history: MarketPricePoint[], isLinked: boolean): string {
@@ -125,5 +148,5 @@ export function marketPage(snapshot: MarketSnapshot, account: Account | null, hi
         const events = new EventSource('/events'); ['market.trade.executed', 'market.demo.pulse', 'market.resolved'].forEach(type => events.addEventListener(type, event => { const data = JSON.parse(event.data); if (data.marketId === id) refresh(); }));
         chart.addEventListener('pointermove', event => { const bounds = chart.getBoundingClientRect(); const padding = 18; const count = Math.max(1, points.length); const relativeX = Math.min(bounds.width - padding, Math.max(padding, event.clientX - bounds.left)); hoveredIndex = count === 1 ? 0 : Math.round((relativeX - padding) / (bounds.width - padding * 2) * (count - 1)); drawChart(); }); chart.addEventListener('pointerleave', () => { hoveredIndex = null; drawChart(); }); chart.addEventListener('pointerdown', event => { chart.setPointerCapture?.(event.pointerId); }); window.addEventListener('resize', drawChart); drawChart();
       })();
-    </script>`, market.question);
+    </script>`, market.question, account);
 }
