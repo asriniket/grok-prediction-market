@@ -1,0 +1,41 @@
+{
+  "note": "Generated once and locked. Do not regenerate — character drift breaks the consistency claim.",
+  "symmetric": true,
+  "symmetryViolations": [],
+  "champions": {
+    "vera": {
+      "side": "affirmative",
+      "file": "assets/champions/vera.jpg",
+      "bytes": 166923,
+      "sha256": "48e0f0fe9a83a376afb1a5e36bfbc3448b1d39f0fda97f38477951e2068c7128",
+      "prompt": "Studio portrait of a fictional debate commentator named VERA. short dark hair, wearing a charcoal jacket over a plain shirt. Shoulders-up framing, centered, facing camera directly. Flat neutral grey seamless backdrop. Even, neutral three-point lighting with no rim light and no colour cast. Neutral composed expression, mouth closed. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
+      "sourceUrl": "https://imgen.x.ai/xai-imgen/xai-tmp-imgen-01148314-aef7-94be-b71a-697bf676e3af-31619860.jpeg"
+    },
+    "kane": {
+      "side": "negative",
+      "file": "assets/champions/kane.jpg",
+      "bytes": 198622,
+      "sha256": "be300b929369bc962288caf897f114040fa3bc1d8229354e4d402a9a08089525",
+      "prompt": "Studio portrait of a fictional debate commentator named KANE. short light hair, wearing a slate jacket over a plain shirt. Shoulders-up framing, centered, facing camera directly. Flat neutral grey seamless backdrop. Even, neutral three-point lighting with no rim light and no colour cast. Neutral composed expression, mouth closed. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
+      "sourceUrl": "https://imgen.x.ai/xai-imgen/xai-tmp-imgen-cb67b604-e1d3-99f3-b493-0cf58de2c202-7e2234b3.jpeg"
+    },
+    "anchor": {
+      "role": "anchor",
+      "file": "assets/champions/anchor.jpg",
+      "bytes": 208531,
+      "sha256": "a50d63c60ee398d4fce3cef7ae2f3402970dd4a565c32de89cc57184572184c8",
+      "prompt": "Studio portrait of a fictional television news anchor named MARA VOSS, seated at a modern news desk. Composed professional expression, mouth closed, facing camera directly. Head-and-shoulders framing with the desk edge visible at the bottom. Behind is a softly out-of-focus broadcast studio with cool blue ambient light and faint screen glow. Crisp broadcast lighting on the face. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
+      "sourceUrl": "https://imgen.x.ai/xai-imgen/xai-tmp-imgen-66c63410-1dd4-9dcc-8ef9-1e66ba00663a-ae98a862.jpeg"
+    }
+  },
+  "promptPair": {
+    "affirmative": {
+      "reference": "Studio portrait of a fictional debate commentator named VERA. short dark hair, wearing a charcoal jacket over a plain shirt. Shoulders-up framing, centered, facing camera directly. Flat neutral grey seamless backdrop. Even, neutral three-point lighting with no rim light and no colour cast. Neutral composed expression, mouth closed. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
+      "loop": "The commentator speaks steadily to camera with natural mouth movement and small head motion. Static locked-off camera, no zoom, no push in. Lighting and background remain constant and even. Neutral professional delivery, no emphatic gestures."
+    },
+    "negative": {
+      "reference": "Studio portrait of a fictional debate commentator named KANE. short light hair, wearing a slate jacket over a plain shirt. Shoulders-up framing, centered, facing camera directly. Flat neutral grey seamless backdrop. Even, neutral three-point lighting with no rim light and no colour cast. Neutral composed expression, mouth closed. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
+      "loop": "The commentator speaks steadily to camera with natural mouth movement and small head motion. Static locked-off camera, no zoom, no push in. Lighting and background remain constant and even. Neutral professional delivery, no emphatic gestures."
+    }
+  }
+}

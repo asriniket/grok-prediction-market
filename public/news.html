@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Karma Markets — Live</title>
+<style>
+  :root{
+    --ink:#0a1930; --ink2:#122a4d;
+    --red:#c8102e; --blue:#0b4da2; --blue2:#083b7d;
+    --up:#00c176; --down:#ff4b4b; --gold:#ffb400;
+    --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#000;color:#fff;font-family:var(--sans);overflow:hidden;height:100vh}
+  .tv{display:grid;grid-template-rows:auto 1fr auto auto auto;height:100vh}
+
+  /* ---------- top strip ---------- */
+  .strip{display:flex;align-items:stretch;background:#0a1930;border-bottom:1px solid #071223;height:34px}
+  .livebox{display:flex;align-items:center;gap:7px;background:var(--red);padding:0 13px;font-size:11px;
+           font-weight:700;letter-spacing:.16em}
+  .livebox i{width:7px;height:7px;border-radius:50%;background:#fff;animation:blink 1.2s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
+  .stripwrap{flex:1;overflow:hidden;position:relative}
+  .stripscroll{display:inline-block;white-space:nowrap;padding-left:100%;animation:sc 38s linear infinite;line-height:34px}
+  .sitem{display:inline-block;margin-right:30px;font-family:var(--mono);font-size:12px;font-weight:700}
+  .sitem .nm{color:#9fc0e8;margin-right:9px;font-weight:600}
+  .clock{display:flex;align-items:center;padding:0 13px;background:#071223;font-family:var(--mono);font-size:11px;color:#9fc0e8}
+  @keyframes sc{to{transform:translateX(-100%)}}
+
+  /* ---------- picture ---------- */
+  .shot{position:relative;overflow:hidden;background:#000;min-height:0}
+  .shot video,.shot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  #idle,#talk{opacity:0;transition:opacity .4s ease}
+  #idle.on,#talk.on{opacity:1}
+  #poster{transition:opacity .6s ease}
+  #poster.off{opacity:0}
+  .vig{position:absolute;inset:0;pointer-events:none;background:linear-gradient(to top,rgba(2,8,18,.72) 0,rgba(0,0,0,0) 30%)}
+
+  /* over-the-shoulder graphic */
+  .ots{position:absolute;top:3.2%;right:3%;width:40%;max-width:520px;
+       background:linear-gradient(170deg,rgba(12,42,84,.97),rgba(6,20,44,.97));
+       border:1px solid #2a5fa8;border-radius:3px;box-shadow:0 18px 50px rgba(0,0,0,.65);
+       overflow:hidden;transition:opacity .35s ease,transform .35s ease}
+  /* Graphics mode: cut to a full-frame board with the set dimmed behind it,
+     rather than parking a card over the presenter's face. */
+  .ots.big{top:5%;right:4%;left:4%;bottom:5%;width:auto;max-width:none;display:flex;flex-direction:column}
+  .ots.big .body{flex:1;display:flex;flex-direction:column}
+  .ots.big .q{font-size:17px;-webkit-line-clamp:2;min-height:auto;margin-bottom:6px}
+  .ots.big .big2{font-size:64px}
+  .ots.big .chg{font-size:22px}
+  .ots.big #otsChart{flex:1;display:flex;align-items:stretch}
+  .ots.big #otsChart svg{height:100%!important}
+  .scrim{position:absolute;inset:0;background:rgba(2,8,18,.72);opacity:0;transition:opacity .35s ease;pointer-events:none}
+  .scrim.on{opacity:1}
+  .ots h4{margin:0;padding:8px 12px;background:rgba(0,0,0,.28);font-size:11px;letter-spacing:.1em;
+          text-transform:uppercase;color:#bcd7f5;font-family:var(--mono);
+          display:flex;justify-content:space-between;gap:10px}
+  .ots .body{padding:11px 13px 13px}
+  .ots .q{font-size:12.5px;line-height:1.35;color:#eaf3ff;
+          display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.7em}
+  .ots .figs{display:flex;align-items:baseline;gap:12px;margin:7px 0 6px}
+  .ots .big2{font-family:var(--mono);font-size:38px;font-weight:700;line-height:1}
+  .ots .chg{font-family:var(--mono);font-size:15px;font-weight:700}
+
+  /* ---------- lower third ---------- */
+  .lower{display:flex;align-items:stretch;height:66px;background:#02101f}
+  .badge{display:flex;align-items:center;padding:0 16px;background:var(--red);font-size:15px;font-weight:800;
+         letter-spacing:.02em;white-space:nowrap}
+  .badge span{font-weight:400;margin-left:7px;opacity:.92}
+  .headline{flex:1;display:flex;align-items:center;padding:0 18px;background:linear-gradient(90deg,#0b4da2,#083b7d);
+            font-size:19px;font-weight:600;line-height:1.18;overflow:hidden}
+  .statblk{display:flex;flex-direction:column;justify-content:center;padding:0 16px;min-width:200px;
+           background:#02101f;border-left:1px solid #113054;font-family:var(--mono)}
+  .statblk .nm{font-size:10px;color:#9fc0e8;letter-spacing:.08em}
+  .statblk .vv{font-size:24px;font-weight:700;line-height:1.1}
+  .statblk .dd{font-size:12px;font-weight:700}
+
+  /* ---------- ticker rows ---------- */
+  .row{height:29px;overflow:hidden;white-space:nowrap;position:relative;border-top:1px solid #071223}
+  .row.a{background:#0a1930}.row.b{background:#071426}
+  .rowscroll{display:inline-block;padding-left:100%;line-height:29px;font-family:var(--mono);font-size:12.5px;font-weight:700}
+  .row.a .rowscroll{animation:sc 44s linear infinite}
+  .row.b .rowscroll{animation:sc 58s linear infinite}
+  .titem{display:inline-block;margin-right:34px}
+  .titem .sym{color:#9fc0e8;margin-right:8px;font-weight:600}
+  .up{color:var(--up)}.down{color:var(--down)}.flat{color:#9fc0e8}
+  /* segment sting */
+  .sting{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+         gap:14px;background:linear-gradient(140deg,#07142a,#020913);z-index:8;opacity:0;pointer-events:none;
+         transition:opacity .22s ease}
+  .sting.on{opacity:1}
+  .sting .bar{width:84px;height:4px;background:var(--red);animation:grow .5s ease-out}
+  @keyframes grow{from{width:0}to{width:84px}}
+  .sting .nm{font-size:46px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+             animation:rise .45s ease-out}
+  .sting .sub{font-family:var(--mono);font-size:11px;letter-spacing:.34em;color:#8fb4de;text-transform:uppercase}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+  /* breaking */
+  .brk{position:absolute;left:0;right:0;top:0;bottom:0;z-index:7;pointer-events:none;opacity:0;transition:opacity .25s}
+  .brk.on{opacity:1}
+  .brk .flash{position:absolute;inset:0;background:rgba(200,16,46,.16);animation:pulse 1.1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.25}50%{opacity:.7}}
+  .brk .band{position:absolute;left:0;right:0;top:38%;background:var(--red);padding:14px 26px;
+             box-shadow:0 14px 44px rgba(0,0,0,.6)}
+  .brk .band .t{font-size:12px;letter-spacing:.34em;font-weight:800}
+  .brk .band .l{font-size:23px;font-weight:700;line-height:1.25;margin-top:6px}
+  .brk .mv{position:absolute;left:0;right:0;top:calc(38% + 104px);display:flex;justify-content:center;gap:14px;
+           font-family:var(--mono);font-size:30px;font-weight:800}
+
+  /* origin quote card */
+  .quote{font-size:19px;line-height:1.45;color:#eaf3ff;border-left:3px solid var(--red);padding-left:14px;margin:6px 0 10px}
+  .quote .by{display:block;margin-top:8px;font-family:var(--mono);font-size:12px;color:#9fc0e8}
+  /* Browsers refuse unmuted autoplay without a user gesture. Rather than
+     silently muting (which looked like the clips had no audio at all), ask. */
+  .unmute{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;
+          justify-content:center;gap:16px;background:rgba(2,8,18,.9);cursor:pointer}
+  .unmute .ico{width:74px;height:74px;border-radius:50%;background:var(--red);display:flex;
+               align-items:center;justify-content:center;font-size:30px}
+  .unmute .t{font-size:17px;font-weight:700;letter-spacing:.04em}
+  .unmute .s{font-family:var(--mono);font-size:11px;color:#9fc0e8;letter-spacing:.16em;text-transform:uppercase}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="tv">
+
+  <div class="strip">
+    <div class="livebox"><i></i>LIVE</div>
+    <div class="stripwrap"><div class="stripscroll" id="strip"></div></div>
+    <div class="clock" id="clock"></div>
+  </div>
+
+  <div class="shot">
+    <img id="poster" src="/assets/champions/anchor.jpg" alt="" />
+    <video id="idle" autoplay muted loop playsinline></video>
+    <video id="talk" autoplay playsinline></video>
+    <div class="vig"></div>
+    <div class="scrim" id="scrim"></div>
+    <div class="brk" id="brk">
+      <div class="flash"></div>
+      <div class="band"><div class="t">BREAKING</div><div class="l" id="brkLine"></div></div>
+      <div class="mv" id="brkMove"></div>
+    </div>
+    <div class="unmute" id="unmute">
+      <div class="ico">🔊</div>
+      <div class="t">Click for sound</div>
+      <div class="s">Browsers block autoplay audio until you interact</div>
+    </div>
+    <div class="sting" id="sting">
+      <div class="bar"></div>
+      <div class="nm" id="stingNm"></div>
+      <div class="sub">Karma Markets</div>
+    </div>
+
+    <div class="ots" id="ots">
+      <h4><span id="otsId">CONTRACT</span><span id="otsSrc"></span></h4>
+      <div class="body">
+        <div class="q" id="otsQ">—</div>
+        <div class="figs"><div class="big2" id="otsVal">—</div><div class="chg" id="otsChg"></div></div>
+        <div id="otsChart"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lower">
+    <div class="badge" id="badge">MARKETS<span id="badgeSub"></span></div>
+    <div class="headline" id="headline">Karma Markets is live.</div>
+    <div class="statblk">
+      <div class="nm" id="statNm">BOOK</div>
+      <div class="vv" id="statVv">—</div>
+      <div class="dd" id="statDd"></div>
+    </div>
+  </div>
+
+  <div class="row a"><div class="rowscroll" id="row1"></div></div>
+  <div class="row b"><div class="rowscroll" id="row2"></div></div>
+</div>
+
+<script>
+const $=(id)=>document.getElementById(id);
+const pct=(p)=>(p*100).toFixed(1);
+const esc=(s)=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString('en-US',{hour12:false})},1000);
+
+/** Ticker symbol from the contract id — KM01, KM02… reads like an instrument. */
+const sym=(id)=>'KM'+String(id).replace(/\D/g,'').padStart(2,'0');
+const arrow=(d)=>d===undefined||d===null?'':(d>=0?'▲':'▼');
+const cls=(d)=>d===undefined||d===null?'flat':(d>=0?'up':'down');
+
+/** `dir` keeps the chart's colour in agreement with the printed change. Colouring
+ *  by first-vs-last across the whole series contradicts a readout measured since
+ *  the last bulletin — a green up-arrow over a red chart reads as a bug. */
+function chart(hist,w,h,strong,dir){
+  const pts=(hist&&hist.length>1)?hist:[0.5,0.5];
+  const n=pts.length,pad=3;
+  const lo=Math.min(...pts),hi=Math.max(...pts);
+  const mid=(lo+hi)/2,span=Math.max(hi-lo,0.06)*1.35;
+  const top=Math.min(1,mid+span/2),bot=Math.max(0,mid-span/2);
+  const X=i=>pad+(i/(n-1))*(w-pad*2);
+  const Y=p=>h-pad-((p-bot)/((top-bot)||1))*(h-pad*2);
+  const line=pts.map((p,i)=>`${X(i).toFixed(1)},${Y(p).toFixed(1)}`).join(' ');
+  const rising=(dir===undefined||dir===null)?(pts[n-1]>=pts[0]):(dir>=0);
+  const col=rising?'var(--up)':'var(--down)';
+  const id='g'+Math.random().toString(36).slice(2,8);
+  // Column ghosts behind the line, like a broadcast chart.
+  const bars=pts.map((p,i)=>{
+    const bw=Math.max(2,(w-pad*2)/n-2);
+    return `<rect x="${(X(i)-bw/2).toFixed(1)}" y="${Y(p).toFixed(1)}" width="${bw.toFixed(1)}"
+      height="${Math.max(0,h-pad-Y(p)).toFixed(1)}" fill="${col}" opacity="0.13"/>`;
+  }).join('');
+  return `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;height:${h}px">
+    <defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="${col}" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+    ${bars}
+    ${(0.5>=bot&&0.5<=top)?`<line x1="0" y1="${Y(0.5).toFixed(1)}" x2="${w}" y2="${Y(0.5).toFixed(1)}" stroke="#2a5fa8" stroke-dasharray="4 4"/>`:''}
+    <polygon points="${X(0)},${h-pad} ${line} ${X(n-1)},${h-pad}" fill="url(#${id})"/>
+    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="${strong?2.4:1.6}" stroke-linejoin="round"/>
+    <circle cx="${X(n-1)}" cy="${Y(pts[n-1])}" r="${strong?4:2.6}" fill="${col}"/></svg>`;
+}
+
+let markets=[], traders=[], idleReady=false, focusId=null;
+
+let soundOn=false;
+const audio=new Audio();
+
+$('unmute').addEventListener('click',()=>{
+  soundOn=true;
+  $('unmute').classList.add('hidden');
+  const t=$('talk');
+  t.muted=false;
+  // Unlock the element by playing it once inside the gesture.
+  t.play().catch(()=>{});
+  audio.muted=false;
+  audio.play().catch(()=>{});
+});
+
+function toIdle(){ if(idleReady) $('idle').classList.add('on'); $('talk').classList.remove('on'); }
+
+function toTalk(url){
+  const t=$('talk');
+  t.src=url;
+  // Muted until the viewer has clicked — an unmuted play() is simply rejected
+  // before then, which would drop the beat entirely.
+  t.muted=!soundOn;
+  t.onplaying=()=>{ t.classList.add('on'); $('idle').classList.remove('on'); $('poster').classList.add('off'); };
+  t.onended=toIdle;
+  t.play().catch(()=>{ t.muted=true; t.play().catch(()=>{}); });
+}
+
+function playVO(path){
+  if(!soundOn) return;          // nothing to show for a silent VO beat
+  audio.src=path;
+  audio.play().catch(()=>{});
+}
+
+/** Karma segment gets a balances board, not an odds chart — the point of the
+ *  segment is where the money came from, and a price line cannot show that. */
+function renderKarma(big){
+  $('ots').classList.toggle('big',!!big);
+  $('scrim').classList.toggle('on',!!big);
+  $('otsId').textContent='KARMA — SEEDED FROM PUBLIC HISTORY';
+  $('otsSrc').textContent='not purchasable';
+  $('otsQ').textContent='Starting balance is a function of account tenure and how many people actually read you.';
+  const top=[...traders].sort((a,b)=>b.credits-a.credits);
+  $('otsVal').textContent=top.length?top[0].credits.toLocaleString():'—';
+  $('otsChg').innerHTML=top.length?`<span class="flat">@${esc(top[0].handle)}</span>`:'';
+  $('otsChart').innerHTML=`<div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">`+
+    top.map(t=>{
+      const pl=t.credits-t.seedCredits;
+      const w=Math.max(3,(t.seedCredits/Math.max(...top.map(x=>x.seedCredits),1))*100);
+      const burners=Math.ceil(t.seedCredits/100);
+      return `<div style="display:grid;grid-template-columns:110px 1fr 110px;gap:10px;align-items:center;font-family:var(--mono);font-size:12px">
+        <div style="color:#9fc0e8">@${esc(t.handle)}</div>
+        <div style="background:rgba(255,255,255,.05);height:16px;position:relative;border-radius:2px;overflow:hidden">
+          <div style="position:absolute;inset:0 auto 0 0;width:${w}%;background:linear-gradient(90deg,#0b4da2,#2a8fe8)"></div>
+          <div style="position:absolute;right:6px;top:0;line-height:16px;font-size:10px;color:#cfe3fa">${burners} burners to match</div>
+        </div>
+        <div style="text-align:right"><b>${Math.round(t.credits).toLocaleString()}</b>
+          <span class="${pl>=0?'up':'down'}">${pl>=0?'+':''}${Math.round(pl)}</span></div>
+      </div>`;
+    }).join('')+`</div>`;
+}
+
+function renderOts(big){
+  const m=markets.find(x=>x.id===focusId)||markets[0];
+  $('ots').classList.toggle('big',!!big);
+  $('scrim').classList.toggle('on',!!big);
+  if(!m) return;
+  $('otsId').textContent=`${sym(m.id)} · YES`;
+  $('otsSrc').textContent='@'+(m.sourceHandle||'');
+  $('otsQ').textContent=m.question;
+  $('otsVal').textContent=pct(m.price);
+  const d=m.delta;
+  $('otsChg').innerHTML=`<span class="${cls(d)}">${arrow(d)} ${d===undefined||d===null?'0.0':Math.abs(d*100).toFixed(1)}</span>`;
+  $('otsChart').innerHTML=chart(m.history,520,big?300:104,true,m.delta);
+}
+
+function renderTickers(){
+  const list=markets.length?markets:[{id:'0',question:'awaiting contracts',price:0}];
+  $('strip').innerHTML=list.map(m=>
+    `<span class="sitem"><span class="nm">${sym(m.id)}</span>${pct(m.price)}
+      <span class="${cls(m.delta)}">${arrow(m.delta)}${m.delta?Math.abs(m.delta*100).toFixed(1):''}</span></span>`).join('').repeat(2);
+  $('row1').innerHTML=list.map(m=>
+    `<span class="titem"><span class="sym">${sym(m.id)}</span>${esc((m.question||'').slice(0,58))}
+      <b>${pct(m.price)}</b> <span class="${cls(m.delta)}">${arrow(m.delta)}</span></span>`).join('').repeat(2);
+  $('row2').innerHTML=list.map(m=>
+    `<span class="titem"><span class="sym">${sym(m.id)}</span>VOL ${(m.volume||0).toLocaleString()}
+      · ${m.tradeCount||0} TRD · @${esc(m.sourceHandle||'')}</span>`).join('').repeat(2);
+
+  const tot=markets.reduce((s,m)=>s+(m.volume||0),0);
+  $('statNm').textContent='BOOK VOLUME';
+  $('statVv').textContent=tot.toLocaleString();
+  $('statDd').innerHTML=`<span class="flat">${markets.length} contracts</span>`;
+}
+
+function setLower(kicker,text,quiet){
+  $('badge').textContent=(kicker||'MARKETS').toUpperCase();
+  $('headline').textContent=text;
+  $('headline').style.opacity=quiet?.72:1;
+}
+
+function showSting(name){
+  $('stingNm').textContent=name;
+  const el=$('sting'); el.classList.add('on');
+  setTimeout(()=>el.classList.remove('on'),1700);
+}
+
+function showBreaking(s){
+  $('brkLine').textContent=s.line;
+  const up=s.to>s.from;
+  $('brkMove').innerHTML=`<span class="${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs((s.to-s.from)*100).toFixed(0)} pts</span>
+    <span class="flat">${(s.from*100).toFixed(1)} → ${(s.to*100).toFixed(1)}</span>`;
+  $('brk').classList.add('on');
+  if(s.audioPath){ playVO(s.audioPath); setTimeout(()=>$('brk').classList.remove('on'),(s.seconds||5)*1000+600); }
+}
+
+/** The origin segment shows the post itself — a quote card, not a price line.
+ *  Visual variety is what stops a rotation reading as one long ramble. */
+function renderOrigin(big){
+  const m=markets.find(x=>x.id===focusId)||markets[0];
+  $('ots').classList.toggle('big',!!big);
+  $('scrim').classList.toggle('on',!!big);
+  if(!m) return;
+  $('otsId').textContent='WHERE IT CAME FROM';
+  $('otsSrc').textContent='@'+(m.sourceHandle||'');
+  $('otsQ').textContent=m.question;
+  $('otsVal').textContent=pct(m.price);
+  const d=m.delta;
+  $('otsChg').innerHTML=`<span class="${cls(d)}">${arrow(d)} ${d===undefined||d===null?'0.0':Math.abs(d*100).toFixed(1)}</span>`;
+  $('otsChart').innerHTML=m.sourceClaim
+    ? `<div class="quote">“${esc(m.sourceClaim)}”<span class="by">— @${esc(m.sourceHandle)}, now a tradeable instrument</span></div>`
+    : chart(m.history,520,big?300:104,true,m.delta);
+}
+
+/** Tease card — the "still ahead" beat that implies a rundown exists. */
+function renderTease(big){
+  $('ots').classList.toggle('big',!!big);
+  $('scrim').classList.toggle('on',!!big);
+  $('otsId').textContent='STILL AHEAD';
+  $('otsSrc').textContent='';
+  $('otsQ').textContent='';
+  $('otsVal').textContent='';
+  $('otsChg').innerHTML='';
+  $('otsChart').innerHTML=`<div style="font-size:30px;font-weight:700;line-height:1.3;padding:6px 0 10px">${esc($('say').textContent||'')}</div>`;
+}
+
+function apply(msg){
+  if(msg.idleUrl && !idleReady){
+    const i=$('idle'); i.src=msg.idleUrl;
+    i.oncanplay=()=>{ idleReady=true; i.classList.add('on'); $('poster').classList.add('off'); };
+    i.play().catch(()=>{});
+  }
+  if(msg.markets){ markets=msg.markets; renderTickers(); }
+  if(msg.traders){ traders=msg.traders; }
+
+  const s=msg.segment;
+  if(!s){ renderOts(false); return; }
+
+  if(s.kind==='sting'){ showSting(s.badge); return; }
+  if(s.kind==='breaking'){ showBreaking(s); return; }
+
+  if(s.kind==='beat'){
+    focusId=s.marketId||focusId;
+    const who = s.speaker==='vera'?'VERA · YES' : s.speaker==='kane'?'KANE · NO' : null;
+    setLower(who?`${s.kicker} — ${who}`:s.kicker, s.line, false);
+
+    // Treatment picks the graphic, so the same segment never looks the same as
+    // the one before it.
+    const graphic=(big)=>{
+      if(s.treatment==='balances') renderKarma(big);
+      else if(s.treatment==='quote') renderOrigin(big);
+      else if(s.treatment==='tease') renderTease(big);
+      else renderOts(big);
+    };
+
+    if(s.videoUrl){ graphic(false); toTalk(s.videoUrl); }   // on camera → graphic over the shoulder
+    else { toIdle(); graphic(true); playVO(s.audioPath); }  // VO → graphic takes the frame
+    return;
+  }
+
+  if(s.kind==='board'){
+    if(s.markets){ markets=s.markets; renderTickers(); }
+    toIdle();
+    renderOts(true);
+    setLower('The board','Live odds across the book.',true);
+  }
+}
+
+let ws;
+function connect(){
+  ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
+  ws.onmessage=(m)=>apply(JSON.parse(m.data));
+  ws.onclose=()=>setTimeout(connect,1500);
+}
+connect();
+</script>
+</body>
+</html>
