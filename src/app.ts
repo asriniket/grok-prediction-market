@@ -68,7 +68,7 @@ export function createApp(dependencies: AppDependencies) {
 
   app.get("/health", (_request, response) => response.json({ ok: true }));
 
-  app.get("/", asyncRoute(async (request, response) => {
+  app.get(["/", "/markets"], asyncRoute(async (request, response) => {
     const markets = await dependencies.store.listMarkets(50);
     const snapshots = await Promise.all(markets.map((market) => dependencies.store.getMarketSnapshot(market.id)));
     const linkedUserId = sessionUserId(request, dependencies.sessions);
