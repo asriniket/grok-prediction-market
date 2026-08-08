@@ -13,7 +13,8 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "broadcast": "tsx src/broadcast/server.ts",
-    "champions:lock": "tsx src/broadcast/champions/lock.ts"
+    "champions:lock": "tsx src/broadcast/champions/lock.ts",
+    "seed": "tsx src/broadcast/seed.ts"
   },
   "dependencies": {
     "dotenv": "^16.6.1",
