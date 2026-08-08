@@ -10,9 +10,9 @@ import type { MarketLine, TraderLine } from './news/bulletin.js';
  *
  * Two things the engine does not expose, and how they are handled:
  *
- *  - PRICE HISTORY. Snapshots carry a current price, not a series. The charts
- *    need a series, so it is accumulated here from observed prices. It starts
- *    empty on boot rather than being back-filled with invented points.
+ *  - PRICE HISTORY comes from GET /api/markets/:id/history, which the engine
+ *    added alongside its UI. Locally accumulated points are kept only as a
+ *    fallback when that call fails, so a chart is never drawn from guesses.
  *  - AN ACCOUNT LIST. Accounts are fetched by id, so there is no roster to
  *    profile. Traders are learned from trade events as they appear, which means
  *    the karma segment has nothing to say until somebody trades — correct
@@ -43,11 +43,28 @@ export class Engine {
 
   constructor(private readonly base = config.engineUrl) {}
 
+  /** Real series from the engine. Falls back to locally observed prices. */
+  private async fetchHistory(id: string): Promise<number[] | undefined> {
+    const res = await fetch(`${this.base}/api/markets/${id}/history?limit=120`).catch(() => undefined);
+    if (!res?.ok) return undefined;
+    const body = (await res.json().catch(() => undefined)) as { points?: Array<{ priceYes: number }> } | undefined;
+    const pts = (body?.points ?? []).map((p) => p.priceYes).filter((n) => Number.isFinite(n));
+    return pts.length > 1 ? pts.slice(-MAX_HISTORY) : undefined;
+  }
+
   async markets(): Promise<MarketLine[]> {
     const res = await fetch(`${this.base}/api/markets?limit=50`).catch(() => undefined);
     if (!res?.ok) return [];
     const body = (await res.json().catch(() => undefined)) as { markets?: Snapshot[] } | undefined;
     const snaps = body?.markets ?? [];
+
+    const engineHistory = new Map<string, number[]>();
+    await Promise.all(
+      snaps.map(async (s) => {
+        const h = await this.fetchHistory(s.market.id);
+        if (h) engineHistory.set(s.market.id, h);
+      }),
+    );
 
     return snaps.map((s) => {
       const id = s.market.id;
@@ -73,7 +90,7 @@ export class Engine {
         sourceHandle: s.market.sourcePost?.authorHandle ?? 'unknown',
         sourceClaim: s.market.sourcePost?.text,
         resolveBy: s.market.closesAt?.slice(0, 10),
-        history: [...series],
+        history: engineHistory.get(id) ?? [...series],
       };
     });
   }
