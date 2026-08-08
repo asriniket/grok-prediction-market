@@ -43,6 +43,25 @@ export function costToBuy(state: AmmState, outcome: Outcome, shares: number): nu
 }
 
 /**
+ * The credits returned when a holder exits shares back into the AMM. A sale can
+ * only remove shares that are present in the market state; caller-specific
+ * ownership checks live in the store transaction.
+ */
+export function proceedsForSale(state: AmmState, outcome: Outcome, shares: number): number {
+  if (!Number.isFinite(shares) || shares <= 0) {
+    throw new AppError("shares must be positive", 422, "INVALID_TRADE");
+  }
+  const outstanding = outcome === "YES" ? state.yesShares : state.noShares;
+  if (shares > outstanding + 1e-8) {
+    throw new AppError("cannot sell more shares than the market holds", 422, "INVALID_TRADE");
+  }
+  const next = outcome === "YES"
+    ? { ...state, yesShares: Math.max(0, state.yesShares - shares) }
+    : { ...state, noShares: Math.max(0, state.noShares - shares) };
+  return lmsrCost(state) - lmsrCost(next);
+}
+
+/**
  * Converts a safe spend budget into shares. Bisection prevents a client from
  * exploiting a stale quoted price and guarantees actual debit never exceeds it.
  */

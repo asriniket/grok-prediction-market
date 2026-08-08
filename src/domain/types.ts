@@ -69,6 +69,7 @@ export interface Trade {
   id: string;
   marketId: string;
   userId: string;
+  side: "BUY" | "SELL";
   outcome: Outcome;
   credits: number;
   shares: number;
@@ -80,6 +81,16 @@ export interface MarketPricePoint {
   marketId: string;
   priceYes: number;
   recordedAt: string;
+  kind: "OPEN" | "TRADE" | "DEMO";
+}
+
+export interface MarketMetrics {
+  /** LMSR depth: higher values make a given trade move the price less. */
+  liquidityDepth: number;
+  /** Mean absolute price movement across the recent chart window. */
+  volatility: number;
+  activityCount: number;
+  demoActivityCount: number;
 }
 
 export interface MarketSnapshot {
@@ -87,6 +98,7 @@ export interface MarketSnapshot {
   priceYes: number;
   priceNo: number;
   position: Position | null;
+  metrics: MarketMetrics;
 }
 
 export interface DomainEvent<T = Record<string, unknown>> {
@@ -94,6 +106,7 @@ export interface DomainEvent<T = Record<string, unknown>> {
   type:
     | "market.created"
     | "market.trade.executed"
+    | "market.demo.pulse"
     | "market.resolved"
     | "account.seeded";
   occurredAt: string;
