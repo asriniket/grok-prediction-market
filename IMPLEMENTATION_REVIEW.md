@@ -68,9 +68,9 @@ launch-specific legal advice, not an engineering conclusion.
 
 ## Deliberately deferred
 
-- Persistent encryption and refresh of bot OAuth tokens. The callback holds
-  tokens in process for a demo; deploy only with secret-managed tokens or add
-  encrypted persistent storage.
+- Encryption and refresh rotation for bot OAuth tokens. The hackathon build
+  persists tokens in its git-ignored local SQLite database; deploy only with
+  encrypted, secret-managed storage.
 - User-session authentication and market-resolution authorization. The public
   hackathon endpoints are intentionally simple and are not production auth.
 - Human resolution review, anti-abuse/rate limits, a queue, and a UI.

@@ -76,6 +76,12 @@ export interface Trade {
   executedAt: string;
 }
 
+export interface MarketPricePoint {
+  marketId: string;
+  priceYes: number;
+  recordedAt: string;
+}
+
 export interface MarketSnapshot {
   market: Market;
   priceYes: number;

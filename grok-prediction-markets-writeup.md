@@ -1,4 +1,4 @@
-# Karma Markets
+# Threadline
 
 **Turn any post into a prediction market. Your balance is your account history. Two synthetic champions argue it out, live.**
 
