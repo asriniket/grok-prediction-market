@@ -68,10 +68,12 @@ export function createApp(dependencies: AppDependencies) {
 
   app.get("/health", (_request, response) => response.json({ ok: true }));
 
-  app.get("/", asyncRoute(async (_request, response) => {
+  app.get("/", asyncRoute(async (request, response) => {
     const markets = await dependencies.store.listMarkets(50);
     const snapshots = await Promise.all(markets.map((market) => dependencies.store.getMarketSnapshot(market.id)));
-    response.type("html").send(marketIndexPage(snapshots));
+    const linkedUserId = sessionUserId(request, dependencies.sessions);
+    const viewer = linkedUserId ? await dependencies.store.getAccount(linkedUserId) : null;
+    response.type("html").send(marketIndexPage(snapshots, viewer));
   }));
 
   app.post("/api/accounts", asyncRoute(async (request, response) => {
