@@ -3,3 +3,6 @@ dist/
 .env
 data/
 coverage/
+
+# generated clips and narration
+public/media/

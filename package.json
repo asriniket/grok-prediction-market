@@ -11,18 +11,22 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "broadcast": "tsx src/broadcast/server.ts",
+    "champions:lock": "tsx src/broadcast/champions/lock.ts"
   },
   "dependencies": {
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
-    "zod": "^3.24.4"
+    "zod": "^3.24.4",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.3",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@types/ws": "^8.5.13"
   }
 }
