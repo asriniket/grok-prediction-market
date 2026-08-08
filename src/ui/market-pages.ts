@@ -29,6 +29,12 @@ const styles = `
   a { color: inherit; } button, input { font: inherit; }
   .shell { max-width: 1120px; margin: 0 auto; padding: 28px 22px 64px; }
   .nav { display: flex; justify-content: space-between; gap: 16px; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 22px; }
+  .nav-links { display: flex; gap: 18px; align-items: center; margin-right: auto; margin-left: 26px; }
+  .nav-links a { color: inherit; text-decoration: none; opacity: .62; font-size: 14px; }
+  .nav-links a:hover { opacity: 1; }
+  .nav-links a.live { opacity: 1; display: inline-flex; align-items: center; gap: 7px; }
+  .nav-links a.live i { width: 7px; height: 7px; border-radius: 50%; background: #e5484d; animation: livepulse 1.4s infinite; }
+  @keyframes livepulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
   .brand { text-decoration: none; font-weight: 800; letter-spacing: -.06em; font-size: 24px; }.brand i { color: var(--lime); font-style: normal; }
   .tag { border: 1px solid var(--line); color: var(--muted); padding: 6px 10px; border-radius: 999px; font-size: 12px; }
   .eyebrow { color: var(--lime); font-weight: 700; letter-spacing: .1em; font-size: 12px; text-transform: uppercase; }
@@ -55,7 +61,7 @@ const styles = `
 function layout(content: string, title: string): string {
   return `<!doctype html>
   <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Threadline</title><style>${styles}</style></head>
-  <body><main class="shell"><nav class="nav"><a href="/" class="brand">thread<i>line</i></a><span class="tag">play credits · no cash-out</span></nav>${content}</main></body></html>`;
+  <body><main class="shell"><nav class="nav"><a href="/" class="brand">thread<i>line</i></a><span class="nav-links"><a href="/">Markets</a><a href="/live" class="live"><i></i>Live</a></span><span class="tag">play credits · no cash-out</span></nav>${content}</main></body></html>`;
 }
 
 export function marketIndexPage(markets: MarketSnapshot[]): string {

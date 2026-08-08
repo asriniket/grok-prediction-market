@@ -1,7 +1,7 @@
 import { AppError } from "../domain/errors.js";
 import { outcomePrice } from "../domain/lmsr.js";
 import type { SourcePost, XPost } from "../domain/types.js";
-import { SqliteStore } from "../infrastructure/sqlite-store.js";
+import type { MarketStore } from "../infrastructure/store.js";
 import { XApiClient } from "../integrations/x-client.js";
 import { BotRegistry } from "../integrations/x-oauth.js";
 import { MarketService } from "./market-service.js";
@@ -19,7 +19,7 @@ function replyText(message: string): string {
 
 export class XBotService {
   constructor(
-    private readonly store: SqliteStore,
+    private readonly store: MarketStore,
     private readonly bots: BotRegistry,
     private readonly markets: MarketService,
     private readonly appUrl: string,
@@ -35,15 +35,15 @@ export class XBotService {
     let replies = 0;
     let failures = 0;
     for (const mention of chronological) {
-      if (this.store.isMentionProcessed(mention.id)) continue;
+      if (await this.store.isMentionProcessed(mention.id)) continue;
       if (!COMMAND.test(mention.text)) {
-        this.store.markMentionProcessed(mention.id);
+        await this.store.markMentionProcessed(mention.id);
         processed += 1;
         continue;
       }
       try {
         const replyId = await this.openMarketFromMention(client, mention);
-        this.store.markMentionProcessed(mention.id, replyId);
+        await this.store.markMentionProcessed(mention.id, replyId);
         processed += 1;
         replies += 1;
       } catch (error) {
@@ -55,7 +55,7 @@ export class XBotService {
           : "I couldn't turn that into an objectively resolvable market. Reply to a time-bound, falsifiable claim and try again.";
         try {
           const replyId = await client.postReply(mention.id, replyText(message));
-          this.store.markMentionProcessed(mention.id, replyId);
+          await this.store.markMentionProcessed(mention.id, replyId);
           processed += 1;
           replies += 1;
         } catch {

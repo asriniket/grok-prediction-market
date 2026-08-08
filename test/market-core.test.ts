@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { calculateKarma, KARMA_CEILING, KARMA_FLOOR } from "../src/domain/karma.js";
 import { costToBuy, outcomePrice, proceedsForSale, sharesForBudget } from "../src/domain/lmsr.js";
 import { SqliteStore } from "../src/infrastructure/sqlite-store.js";
+import type { MarketStore } from "../src/infrastructure/store.js";
 import { EventBus } from "../src/services/event-bus.js";
 import { MarketService } from "../src/services/market-service.js";
 import type { ClaimDraft, SourcePost } from "../src/domain/types.js";
@@ -59,8 +60,8 @@ describe("LMSR", () => {
 describe("market exits", () => {
   it("lets a holder partially sell, credits the current AMM proceeds, and blocks short sales", async () => {
     const store = new SqliteStore(":memory:");
-    const markets = new MarketService(store, { extract: async () => claim }, new EventBus());
-    markets.createAccount({
+    const markets = new MarketService(store as unknown as MarketStore, { extract: async () => claim }, new EventBus());
+    await markets.createAccount({
       xUserId: "trader",
       handle: "trader",
       accountCreatedAt: "2026-08-07T00:00:00.000Z",
@@ -69,9 +70,9 @@ describe("market exits", () => {
     });
     const created = await markets.createMarket({ sourcePost, creatorUserId: "trader", claim });
     const initialBalance = store.getAccount("trader")!.availableBalance;
-    const buy = markets.trade({ marketId: created.market.id, userId: "trader", outcome: "YES", credits: 20 });
+    const buy = await markets.trade({ marketId: created.market.id, userId: "trader", outcome: "YES", credits: 20 });
     const beforeSellPrice = store.getMarketSnapshot(created.market.id, "trader").priceYes;
-    const sale = markets.sell({ marketId: created.market.id, userId: "trader", outcome: "YES", shares: buy.shares / 2 });
+    const sale = await markets.sell({ marketId: created.market.id, userId: "trader", outcome: "YES", shares: buy.shares / 2 });
     const snapshot = store.getMarketSnapshot(created.market.id, "trader");
 
     expect(sale.side).toBe("SELL");
@@ -80,24 +81,24 @@ describe("market exits", () => {
     expect(snapshot.priceYes).toBeLessThan(beforeSellPrice);
     expect(store.getAccount("trader")!.availableBalance).toBeCloseTo(initialBalance - buy.credits + sale.credits, 8);
     expect(store.getPriceHistory(created.market.id)).toHaveLength(3);
-    expect(() => markets.sell({ marketId: created.market.id, userId: "trader", outcome: "YES", shares: buy.shares })).toThrow(/only hold/i);
+    await expect(markets.sell({ marketId: created.market.id, userId: "trader", outcome: "YES", shares: buy.shares })).rejects.toThrow(/only hold/i);
     store.close();
   });
 
   it("does not debit a trader when an unresolvable market follows a fully exited position", async () => {
     const store = new SqliteStore(":memory:");
-    const markets = new MarketService(store, { extract: async () => claim }, new EventBus());
+    const markets = new MarketService(store as unknown as MarketStore, { extract: async () => claim }, new EventBus());
     for (const xUserId of ["first", "second"]) {
-      markets.createAccount({ xUserId, handle: xUserId, accountCreatedAt: "2026-08-07T00:00:00.000Z", postCount: 0, impressionSamples: [] });
+      await markets.createAccount({ xUserId, handle: xUserId, accountCreatedAt: "2026-08-07T00:00:00.000Z", postCount: 0, impressionSamples: [] });
     }
     const created = await markets.createMarket({ sourcePost, creatorUserId: "first", claim });
     const opening = store.getAccount("first")!.availableBalance;
-    const firstBuy = markets.trade({ marketId: created.market.id, userId: "first", outcome: "YES", credits: 10 });
-    markets.trade({ marketId: created.market.id, userId: "second", outcome: "YES", credits: 90 });
-    const firstSale = markets.sell({ marketId: created.market.id, userId: "first", outcome: "YES", shares: firstBuy.shares });
+    const firstBuy = await markets.trade({ marketId: created.market.id, userId: "first", outcome: "YES", credits: 10 });
+    await markets.trade({ marketId: created.market.id, userId: "second", outcome: "YES", credits: 90 });
+    const firstSale = await markets.sell({ marketId: created.market.id, userId: "first", outcome: "YES", shares: firstBuy.shares });
     expect(firstSale.credits).toBeGreaterThan(firstBuy.credits);
     const afterExit = store.getAccount("first")!.availableBalance;
-    markets.resolve({ marketId: created.market.id, outcome: null, sources: [] });
+    await markets.resolve({ marketId: created.market.id, outcome: null, sources: [] });
     expect(store.getAccount("first")!.availableBalance).toBeCloseTo(afterExit, 8);
     expect(afterExit).toBeGreaterThan(opening);
     store.close();
@@ -108,8 +109,8 @@ describe("market settlement", () => {
   it("pays the winning shares and exactly refunds an unresolvable market", async () => {
     const store = new SqliteStore(":memory:");
     const extractor = { extract: async () => claim };
-    const markets = new MarketService(store, extractor, new EventBus());
-    markets.createAccount({
+    const markets = new MarketService(store as unknown as MarketStore, extractor, new EventBus());
+    await markets.createAccount({
       xUserId: "trader",
       handle: "trader",
       accountCreatedAt: "2026-08-07T00:00:00.000Z",
@@ -121,18 +122,18 @@ describe("market settlement", () => {
     expect(store.getPriceHistory(first.market.id)).toEqual([
       expect.objectContaining({ marketId: first.market.id, priceYes: 0.5 }),
     ]);
-    const trade = markets.trade({ marketId: first.market.id, userId: "trader", outcome: "YES", credits: 10 });
+    const trade = await markets.trade({ marketId: first.market.id, userId: "trader", outcome: "YES", credits: 10 });
     const priceHistory = store.getPriceHistory(first.market.id);
     expect(priceHistory).toHaveLength(2);
     expect(priceHistory.at(-1)!.priceYes).toBeGreaterThan(0.5);
     expect(store.getAccount("trader")!.availableBalance).toBeCloseTo(initialBalance - trade.credits, 8);
-    markets.resolve({ marketId: first.market.id, outcome: "YES", sources: ["https://example.com/official"] });
+    await markets.resolve({ marketId: first.market.id, outcome: "YES", sources: ["https://example.com/official"] });
     expect(store.getAccount("trader")!.availableBalance).toBeCloseTo(initialBalance - trade.credits + trade.shares, 8);
 
     const second = await markets.createMarket({ sourcePost: { ...sourcePost, id: "124", url: "https://x.com/alice/status/124" }, creatorUserId: "trader", claim });
     const beforeRefundTrade = store.getAccount("trader")!.availableBalance;
-    markets.trade({ marketId: second.market.id, userId: "trader", outcome: "NO", credits: 7 });
-    markets.resolve({ marketId: second.market.id, outcome: null, sources: [] });
+    await markets.trade({ marketId: second.market.id, userId: "trader", outcome: "NO", credits: 7 });
+    await markets.resolve({ marketId: second.market.id, outcome: null, sources: [] });
     expect(store.getAccount("trader")!.availableBalance).toBeCloseTo(beforeRefundTrade, 8);
     store.close();
   });

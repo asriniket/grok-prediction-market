@@ -48,7 +48,10 @@ export class Engine {
     const res = await fetch(`${this.base}/api/markets/${id}/history?limit=120`).catch(() => undefined);
     if (!res?.ok) return undefined;
     const body = (await res.json().catch(() => undefined)) as { points?: Array<{ priceYes: number }> } | undefined;
-    const pts = (body?.points ?? []).map((p) => p.priceYes).filter((n) => Number.isFinite(n));
+    // Guard the shape rather than trusting it: an un-awaited promise upstream
+    // serialises to {}, and an unguarded .map here takes the whole server down.
+    const raw = Array.isArray(body?.points) ? body.points : [];
+    const pts = raw.map((p) => p?.priceYes).filter((n): n is number => Number.isFinite(n));
     return pts.length > 1 ? pts.slice(-MAX_HISTORY) : undefined;
   }
 

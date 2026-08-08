@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { resolve } from "node:path";
 
 function required(value: string | undefined, name: string): string {
   if (!value) throw new Error(`${name} is not configured`);
@@ -8,7 +7,7 @@ function required(value: string | undefined, name: string): string {
 
 export interface AppConfig {
   port: number;
-  databasePath: string;
+  databaseUrl: string;
   appUrl: string;
   cronSecret?: string;
   xaiApiKey?: string;
@@ -23,7 +22,7 @@ export function loadConfig(): AppConfig {
   if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a valid TCP port");
   return {
     port,
-    databasePath: resolve(process.env.DATABASE_PATH ?? "./data/threadline.sqlite"),
+    databaseUrl: required(process.env.DATABASE_URL, "DATABASE_URL"),
     appUrl: (process.env.APP_URL ?? `http://localhost:${port}`).replace(/\/$/, ""),
     cronSecret: process.env.CRON_SECRET || undefined,
     xaiApiKey: process.env.XAI_API_KEY || undefined,
