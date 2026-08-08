@@ -61,6 +61,29 @@ export class MarketService {
     return trade;
   }
 
+  sell(input: { marketId: string; userId: string; outcome: Outcome; shares: number }) {
+    const trade = this.store.sell(input);
+    const market = this.store.getMarket(input.marketId)!;
+    const state = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
+    this.events.publish({
+      type: "market.trade.executed",
+      marketId: input.marketId,
+      payload: { trade, priceYes: outcomePrice(state, "YES"), priceNo: outcomePrice(state, "NO") },
+    });
+    return trade;
+  }
+
+  applyDemoFlow(marketId: string, outcome: Outcome, shares: number) {
+    const pulse = this.store.applyDemoFlow({ marketId, outcome, shares });
+    if (!pulse) return null;
+    this.events.publish({
+      type: "market.demo.pulse",
+      marketId,
+      payload: { ...pulse, metrics: this.store.getMarketMetrics(marketId), demo: true },
+    });
+    return pulse;
+  }
+
   resolve(input: { marketId: string; outcome: Outcome | null; sources: string[] }) {
     const market = this.store.resolve(input);
     this.events.publish({ type: "market.resolved", marketId: market.id, payload: { market } });

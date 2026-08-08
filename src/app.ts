@@ -6,6 +6,7 @@ import { SqliteStore } from "./infrastructure/sqlite-store.js";
 import { XOAuthService } from "./integrations/x-oauth.js";
 import { EventBus } from "./services/event-bus.js";
 import { MarketService } from "./services/market-service.js";
+import { SessionStore } from "./services/session-store.js";
 import { XBotService } from "./services/x-bot-service.js";
 import { marketIndexPage, marketPage } from "./ui/market-pages.js";
 
@@ -38,7 +39,22 @@ export interface AppDependencies {
   markets: MarketService;
   oauth: XOAuthService;
   xBots: XBotService;
+  sessions: SessionStore;
   cronSecret?: string;
+}
+
+function readCookie(request: Request, name: string): string | undefined {
+  const raw = request.get("cookie");
+  if (!raw) return undefined;
+  return raw.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
+}
+
+function sessionUserId(request: Request, sessions: SessionStore): string | null {
+  return sessions.getUserId(readCookie(request, "threadline_session"));
+}
+
+function safeMarketReturnTo(value: unknown): string {
+  return typeof value === "string" && /^\/markets\/[0-9a-f-]{36}$/i.test(value) ? value : "/";
 }
 
 function asyncRoute(handler: (request: Request, response: Response) => Promise<void>) {
@@ -68,6 +84,14 @@ export function createApp(dependencies: AppDependencies) {
     response.json({ account });
   });
 
+  app.get("/api/me", (request, response) => {
+    const userId = sessionUserId(request, dependencies.sessions);
+    if (!userId) throw new AppError("Link your X account to trade with your own karma wallet", 401, "X_ACCOUNT_NOT_LINKED");
+    const account = dependencies.store.getAccount(userId);
+    if (!account) throw new AppError("Karma account not found", 404, "NOT_FOUND");
+    response.json({ account });
+  });
+
   app.post("/api/markets", asyncRoute(async (request, response) => {
     const body = z.object({
       sourcePost: sourcePostSchema,
@@ -86,7 +110,9 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.get("/api/markets/:marketId", (request, response) => {
-    const userId = typeof request.query.userId === "string" ? request.query.userId : undefined;
+    // A position is private to the locally linked X account. Do not trust a
+    // caller-supplied user ID to select another person's wallet or position.
+    const userId = sessionUserId(request, dependencies.sessions) ?? undefined;
     response.json(dependencies.store.getMarketSnapshot(request.params.marketId, userId));
   });
 
@@ -96,9 +122,19 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.post("/api/markets/:marketId/trades", (request, response) => {
-    const body = z.object({ userId: z.string().min(1).max(64), outcome: outcomeSchema, credits: z.number().finite().positive() }).parse(request.body);
-    const trade = dependencies.markets.trade({ marketId: request.params.marketId, ...body });
-    response.status(201).json({ trade, snapshot: dependencies.store.getMarketSnapshot(request.params.marketId, body.userId) });
+    const userId = sessionUserId(request, dependencies.sessions);
+    if (!userId) throw new AppError("Link your X account before trading", 401, "X_ACCOUNT_NOT_LINKED");
+    const body = z.object({ outcome: outcomeSchema, credits: z.number().finite().positive() }).parse(request.body);
+    const trade = dependencies.markets.trade({ marketId: request.params.marketId, userId, ...body });
+    response.status(201).json({ trade, snapshot: dependencies.store.getMarketSnapshot(request.params.marketId, userId) });
+  });
+
+  app.post("/api/markets/:marketId/sells", (request, response) => {
+    const userId = sessionUserId(request, dependencies.sessions);
+    if (!userId) throw new AppError("Link your X account before trading", 401, "X_ACCOUNT_NOT_LINKED");
+    const body = z.object({ outcome: outcomeSchema, shares: z.number().finite().positive() }).parse(request.body);
+    const trade = dependencies.markets.sell({ marketId: request.params.marketId, userId, ...body });
+    response.status(201).json({ trade, snapshot: dependencies.store.getMarketSnapshot(request.params.marketId, userId) });
   });
 
   app.post("/api/markets/:marketId/resolve", (request, response) => {
@@ -108,18 +144,31 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.get("/markets/:marketId", (request, response) => {
-    const snapshot = dependencies.store.getMarketSnapshot(request.params.marketId, dependencies.store.getMarket(request.params.marketId)?.sourcePost.authorId);
-    const account = dependencies.store.getAccount(snapshot.market.sourcePost.authorId);
-    response.type("html").send(marketPage(snapshot, account?.availableBalance ?? null, dependencies.store.getPriceHistory(snapshot.market.id)));
+    const market = dependencies.store.getMarket(request.params.marketId);
+    if (!market) throw new AppError("Market not found", 404, "NOT_FOUND");
+    const linkedUserId = sessionUserId(request, dependencies.sessions);
+    const snapshot = dependencies.store.getMarketSnapshot(market.id, linkedUserId ?? undefined);
+    const account = linkedUserId ? dependencies.store.getAccount(linkedUserId) : null;
+    response.type("html").send(marketPage(snapshot, account, dependencies.store.getPriceHistory(snapshot.market.id), Boolean(linkedUserId)));
   });
 
   app.get("/auth/x/start", (_request, response) => {
-    response.redirect(dependencies.oauth.start());
+    response.redirect(dependencies.oauth.startBot());
+  });
+
+  app.get("/auth/x/connect/start", (request, response) => {
+    response.redirect(dependencies.oauth.startTrader(safeMarketReturnTo(request.query.returnTo)));
   });
 
   app.get("/auth/x/callback", asyncRoute(async (request, response) => {
     const query = z.object({ code: z.string().min(1), state: z.string().min(1) }).parse(request.query);
     const result = await dependencies.oauth.complete(query.code, query.state);
+    if (result.purpose === "trader") {
+      const session = dependencies.sessions.create(result.userId);
+      response.cookie("threadline_session", session, { httpOnly: true, sameSite: "lax", maxAge: 12 * 60 * 60 * 1000 });
+      response.redirect(result.returnTo);
+      return;
+    }
     response.type("html").send(`<main><h1>Market bot connected</h1><p>@${result.username} can now receive market-this mentions while this service is running.</p></main>`);
   }));
 

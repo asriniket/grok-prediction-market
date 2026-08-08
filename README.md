@@ -27,14 +27,21 @@ to use structured Grok extraction and X credentials to enable the live bot.
 | `POST /api/markets` | Validate/extract a claim and create a market. |
 | `GET /api/markets/:marketId` | Market state, LMSR price, and the caller's position. |
 | `POST /api/markets/:marketId/trades` | Spend non-transferable karma credits on YES or NO. |
+| `POST /api/markets/:marketId/sells` | Sell held YES or NO shares back to the LMSR for current proceeds. |
 | `POST /api/markets/:marketId/resolve` | Resolve YES/NO or mark unresolvable. |
 | `GET /api/accounts/:xUserId` | Get/create a karma account from public-history inputs. |
+| `GET /api/me` | Read the locally linked X trader wallet. |
 | `GET /auth/x/start` | Authorize the market bot with OAuth 2.0 + PKCE. |
+| `GET /auth/x/connect/start` | Link a trader's X account and seed their karma wallet. |
 | `POST /internal/jobs/poll-x` | Poll bot mentions and reply to “market this”. |
 | `GET /events` | SSE feed for the video/debate layer. |
 
-Requests are authenticated only by the X user id in the initial hackathon API.
-Put an application session in front of the public endpoints before deploying.
+The local market page uses a short-lived session after a trader links their X
+account. Viewing markets is public, but buy and sell routes use that server-side
+session and never accept a caller-supplied wallet ID. Each X user ID maps to one
+local Threadline Karma account, so its balance and open positions persist across
+all Threadline markets while the local SQLite database is retained. Removing the
+local database resets the hackathon demo state.
 `/internal/jobs/poll-x` requires `Authorization: Bearer $CRON_SECRET` when the
 secret is configured.
 
@@ -57,15 +64,28 @@ persistent refresh-token storage in a managed secret store.
 ## Market design
 
 Trades use a binary LMSR automated market maker. Users choose a credit budget;
-the engine solves for the number of outcome shares that budget buys. It never
-allows negative balances or short positions. On YES/NO resolution, each winning
-share pays one credit. An **unresolvable** market refunds every trader's exact
-spend and does not alter calibration.
+the engine solves for the number of outcome shares that budget buys. Holders can
+also sell any portion of the shares they own at the current AMM price; proceeds
+reflect market movement and slippage. It never allows negative balances or short
+positions. On YES/NO resolution, each winning remaining share pays one credit.
+An **unresolvable** market refunds a trader's remaining positive net spend and
+does not alter calibration.
+
+For the local hackathon view, the server also emits a small **clearly labeled
+demo market pulse** every 12 seconds. These points are marked `DEMO` in the
+history API, do not represent users or volume, and exist only to make a fresh
+local market visibly live. The page surfaces liquidity depth and recent
+average price movement as market metrics.
 
 Karma is a capped, public-history-derived seed, not a truth score. The default
 score uses account age, total post count, and a median of up to 100 sampled
 public post impressions. Missing impression samples receive a conservative
 fallback factor rather than fabricated reach.
+
+On a market page, **Link your X account** authorizes the trader with the
+minimal `tweet.read users.read` scopes, derives that frozen seed, and displays
+the underlying public-history inputs. The bot uses a separate OAuth flow with
+posting permission.
 
 ## Event contract for video
 
