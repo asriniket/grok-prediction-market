@@ -1,4 +1,5 @@
 import { AppError } from "../domain/errors.js";
+import { outcomePrice } from "../domain/lmsr.js";
 import type { SourcePost, XPost } from "../domain/types.js";
 import { SqliteStore } from "../infrastructure/sqlite-store.js";
 import { XApiClient } from "../integrations/x-client.js";
@@ -11,9 +12,9 @@ function postIdInUrl(text: string): string | null {
   return text.match(/(?:x|twitter)\.com\/[\w_]+\/status\/(\d+)/i)?.[1] ?? null;
 }
 
-function replyText(handle: string | undefined, message: string): string {
-  const prefix = handle ? `@${handle.replace(/^@/, "")} ` : "";
-  return `${prefix}${message}`.slice(0, 280);
+/** X adds the parent author mention to reply text; adding it ourselves creates duplicates. */
+function replyText(message: string): string {
+  return message.slice(0, 280);
 }
 
 export class XBotService {
@@ -53,7 +54,7 @@ export class XBotService {
           ? "I need the claim extractor configured before I can open a market."
           : "I couldn't turn that into an objectively resolvable market. Reply to a time-bound, falsifiable claim and try again.";
         try {
-          const replyId = await client.postReply(mention.id, replyText(mention.authorHandle, message));
+          const replyId = await client.postReply(mention.id, replyText(message));
           this.store.markMentionProcessed(mention.id, replyId);
           processed += 1;
           replies += 1;
@@ -70,7 +71,7 @@ export class XBotService {
     if (!sourceId) {
       return client.postReply(
         mention.id,
-        replyText(mention.authorHandle, "Reply directly to the post you want to market, then mention me with ‘market this’."),
+        replyText("Reply directly to the post you want to market, then mention me with ‘market this’."),
       );
     }
     const post = await client.getPost(sourceId);
@@ -85,10 +86,11 @@ export class XBotService {
       createdAt: post.createdAt,
     };
     const { market, created } = await this.markets.createMarket({ sourcePost, creatorUserId: mention.authorId });
+    const yesPrice = Math.round(outcomePrice({ liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares }, "YES") * 100);
     const action = created ? "Market opened" : "That market already exists";
     return client.postReply(
       mention.id,
-      replyText(mention.authorHandle, `${action}: ${this.appUrl}/markets/${market.id} · YES ${(50).toFixed(0)}¢ at launch`),
+      replyText(`${action} · YES ${yesPrice}¢ / NO ${100 - yesPrice}¢\n${this.appUrl}/markets/${market.id}`),
     );
   }
 }

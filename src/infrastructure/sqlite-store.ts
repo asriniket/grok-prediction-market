@@ -8,7 +8,9 @@ import { outcomePrice, sharesForBudget, type AmmState } from "../domain/lmsr.js"
 import type {
   Account,
   AccountHistoryInput,
+  BotCredentials,
   Market,
+  MarketPricePoint,
   MarketSnapshot,
   MarketStatus,
   Outcome,
@@ -161,7 +163,23 @@ export class SqliteStore {
         reply_post_id TEXT,
         created_at TEXT NOT NULL
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS bot_credentials (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        user_id TEXT NOT NULL,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS market_price_points (
+        id INTEGER PRIMARY KEY,
+        market_id TEXT NOT NULL REFERENCES markets(id),
+        price_yes REAL NOT NULL CHECK(price_yes >= 0 AND price_yes <= 1),
+        recorded_at TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS idx_market_price_points_market_id_id
+      ON market_price_points(market_id, id);
     `);
+    this.db.exec("PRAGMA optimize");
   }
 
   private transaction<T>(work: () => T): T {
@@ -240,6 +258,7 @@ export class SqliteStore {
         input.liquidityB,
         createdAt,
       );
+      this.insertPricePoint(id, 0.5, createdAt);
       return this.getMarket(id)!;
     });
   }
@@ -276,6 +295,22 @@ export class SqliteStore {
     };
   }
 
+  getPriceHistory(marketId: string, limit = 240): MarketPricePoint[] {
+    const market = this.getMarket(marketId);
+    if (!market) throw new NotFoundError("Market not found");
+    const rows = this.db.prepare(`
+      SELECT market_id, price_yes, recorded_at FROM (
+        SELECT market_id, price_yes, recorded_at, id
+        FROM market_price_points WHERE market_id = ? ORDER BY id DESC LIMIT ?
+      ) ORDER BY id ASC
+    `).all(marketId, limit) as Row[];
+    if (rows.length === 0) {
+      const state: AmmState = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
+      return [{ marketId, priceYes: outcomePrice(state, "YES"), recordedAt: market.createdAt }];
+    }
+    return rows.map((row) => ({ marketId: String(row.market_id), priceYes: numeric(row.price_yes), recordedAt: String(row.recorded_at) }));
+  }
+
   buy(input: { marketId: string; userId: string; outcome: Outcome; credits: number }): Trade {
     return this.transaction(() => {
       const market = this.getMarket(input.marketId);
@@ -304,6 +339,7 @@ export class SqliteStore {
       };
 
       this.db.prepare("UPDATE markets SET yes_shares = ?, no_shares = ? WHERE id = ?").run(nextYes, nextNo, market.id);
+      this.insertPricePoint(market.id, trade.priceAfter, trade.executedAt);
       this.db.prepare(`
         INSERT INTO positions (market_id, user_id, yes_shares, no_shares, net_spend)
         VALUES (?, ?, ?, ?, ?)
@@ -364,8 +400,35 @@ export class SqliteStore {
       .run(mentionPostId, replyPostId ?? null, now());
   }
 
+  getBotCredentials(): BotCredentials | null {
+    const row = this.db.prepare("SELECT user_id, access_token, refresh_token FROM bot_credentials WHERE id = 1").get() as Row | undefined;
+    if (!row) return null;
+    return {
+      userId: String(row.user_id),
+      accessToken: String(row.access_token),
+      refreshToken: row.refresh_token === null ? undefined : String(row.refresh_token),
+    };
+  }
+
+  saveBotCredentials(credentials: BotCredentials): void {
+    this.db.prepare(`
+      INSERT INTO bot_credentials (id, user_id, access_token, refresh_token, updated_at)
+      VALUES (1, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        user_id = excluded.user_id,
+        access_token = excluded.access_token,
+        refresh_token = excluded.refresh_token,
+        updated_at = excluded.updated_at
+    `).run(credentials.userId, credentials.accessToken, credentials.refreshToken ?? null, now());
+  }
+
   private insertLedger(userId: string, marketId: string | null, kind: string, amount: number, note: string): void {
     this.db.prepare("INSERT INTO ledger_entries (id, user_id, market_id, kind, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(randomUUID(), userId, marketId, kind, amount, note, now());
+  }
+
+  private insertPricePoint(marketId: string, priceYes: number, recordedAt: string): void {
+    this.db.prepare("INSERT INTO market_price_points (market_id, price_yes, recorded_at) VALUES (?, ?, ?)")
+      .run(marketId, priceYes, recordedAt);
   }
 }

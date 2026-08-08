@@ -38,7 +38,11 @@ export class BotRegistry {
 export class XOAuthService {
   private readonly pending = new Map<string, PendingAuthorization>();
 
-  constructor(private readonly config: AppConfig, private readonly bots: BotRegistry) {}
+  constructor(
+    private readonly config: AppConfig,
+    private readonly bots: BotRegistry,
+    private readonly onCredentials: (credentials: BotCredentials) => void = () => undefined,
+  ) {}
 
   start(): string {
     const { clientId, redirectUri } = requireXOAuth(this.config);
@@ -86,7 +90,9 @@ export class XOAuthService {
     if (!tokens.access_token) throw new AppError("X OAuth response did not contain an access token", 502, "OAUTH_EXCHANGE_FAILED");
     const xClient = new XApiClient(tokens.access_token);
     const user = await xClient.getCurrentUser();
-    this.bots.set({ userId: user.id, accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+    const credentials = { userId: user.id, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
+    this.bots.set(credentials);
+    this.onCredentials(credentials);
     return { username: user.username };
   }
 }

@@ -23,7 +23,7 @@ export function loadConfig(): AppConfig {
   if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a valid TCP port");
   return {
     port,
-    databasePath: resolve(process.env.DATABASE_PATH ?? "./data/karma-markets.sqlite"),
+    databasePath: resolve(process.env.DATABASE_PATH ?? "./data/threadline.sqlite"),
     appUrl: (process.env.APP_URL ?? `http://localhost:${port}`).replace(/\/$/, ""),
     cronSecret: process.env.CRON_SECRET || undefined,
     xaiApiKey: process.env.XAI_API_KEY || undefined,

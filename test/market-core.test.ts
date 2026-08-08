@@ -69,7 +69,13 @@ describe("market settlement", () => {
     });
     const initialBalance = store.getAccount("trader")!.availableBalance;
     const first = await markets.createMarket({ sourcePost, creatorUserId: "trader", claim });
+    expect(store.getPriceHistory(first.market.id)).toEqual([
+      expect.objectContaining({ marketId: first.market.id, priceYes: 0.5 }),
+    ]);
     const trade = markets.trade({ marketId: first.market.id, userId: "trader", outcome: "YES", credits: 10 });
+    const priceHistory = store.getPriceHistory(first.market.id);
+    expect(priceHistory).toHaveLength(2);
+    expect(priceHistory.at(-1)!.priceYes).toBeGreaterThan(0.5);
     expect(store.getAccount("trader")!.availableBalance).toBeCloseTo(initialBalance - trade.credits, 8);
     markets.resolve({ marketId: first.market.id, outcome: "YES", sources: ["https://example.com/official"] });
     expect(store.getAccount("trader")!.availableBalance).toBeCloseTo(initialBalance - trade.credits + trade.shares, 8);
