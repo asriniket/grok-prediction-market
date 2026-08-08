@@ -1,8 +1,10 @@
-node_modules/
-dist/
-.env
-data/
-coverage/
-
 # generated clips and narration
+*.log
+.DS_Store
+.env
+.env.local
+coverage/
+data/
+dist/
+node_modules/
 public/media/

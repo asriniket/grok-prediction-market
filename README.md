@@ -1,6 +1,7 @@
-# Karma Markets core
+# Threadline core
 
-The market engine, karma seeding, and X mention bots for the Grokathon build.
+**Every argument has odds.** Threadline is the market engine, karma seeding,
+and X mention bot for the Grokathon build.
 Video is intentionally outside this service: consume `market.created`,
 `market.trade.executed`, and `market.resolved` events from the SSE endpoint to
 drive the live-debate renderer.
@@ -21,6 +22,8 @@ to use structured Grok extraction and X credentials to enable the live bot.
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /` / `GET /markets/:marketId` | Local market index and interactive market page. |
+| `GET /api/markets/:marketId/history` | Price history used by the live YES-probability chart. |
 | `POST /api/markets` | Validate/extract a claim and create a market. |
 | `GET /api/markets/:marketId` | Market state, LMSR price, and the caller's position. |
 | `POST /api/markets/:marketId/trades` | Spend non-transferable karma credits on YES or NO. |
@@ -47,9 +50,9 @@ secret is configured.
    mentions timeline, creates a market only for messages containing
    `market this`, and replies once with the market URL.
 
-The OAuth callback holds bot tokens in the running process for the demo. For a
-production deployment, configure the access/refresh tokens using a managed
-secret store and implement encrypted persistent refresh-token storage.
+The OAuth callback saves bot tokens in the local, git-ignored SQLite database
+for the hackathon. For a production deployment, replace this with encrypted
+persistent refresh-token storage in a managed secret store.
 
 ## Market design
 

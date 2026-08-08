@@ -7,6 +7,7 @@ import { XOAuthService } from "./integrations/x-oauth.js";
 import { EventBus } from "./services/event-bus.js";
 import { MarketService } from "./services/market-service.js";
 import { XBotService } from "./services/x-bot-service.js";
+import { marketIndexPage, marketPage } from "./ui/market-pages.js";
 
 const outcomeSchema = z.enum(["YES", "NO"]);
 const historySchema = z.object({
@@ -51,6 +52,11 @@ export function createApp(dependencies: AppDependencies) {
 
   app.get("/health", (_request, response) => response.json({ ok: true }));
 
+  app.get("/", (_request, response) => {
+    const snapshots = dependencies.store.listMarkets(50).map((market) => dependencies.store.getMarketSnapshot(market.id));
+    response.type("html").send(marketIndexPage(snapshots));
+  });
+
   app.post("/api/accounts", (request, response) => {
     const result = dependencies.markets.createAccount(historySchema.parse(request.body));
     response.status(result.created ? 201 : 200).json(result);
@@ -84,6 +90,11 @@ export function createApp(dependencies: AppDependencies) {
     response.json(dependencies.store.getMarketSnapshot(request.params.marketId, userId));
   });
 
+  app.get("/api/markets/:marketId/history", (request, response) => {
+    const limit = z.coerce.number().int().min(2).max(500).catch(240).parse(request.query.limit ?? 240);
+    response.json({ points: dependencies.store.getPriceHistory(request.params.marketId, limit) });
+  });
+
   app.post("/api/markets/:marketId/trades", (request, response) => {
     const body = z.object({ userId: z.string().min(1).max(64), outcome: outcomeSchema, credits: z.number().finite().positive() }).parse(request.body);
     const trade = dependencies.markets.trade({ marketId: request.params.marketId, ...body });
@@ -94,6 +105,12 @@ export function createApp(dependencies: AppDependencies) {
     const body = z.object({ outcome: outcomeSchema.nullable(), sources: z.array(z.string().url()).max(10) }).parse(request.body);
     const market = dependencies.markets.resolve({ marketId: request.params.marketId, outcome: body.outcome as Outcome | null, sources: body.sources });
     response.json({ market, snapshot: dependencies.store.getMarketSnapshot(market.id) });
+  });
+
+  app.get("/markets/:marketId", (request, response) => {
+    const snapshot = dependencies.store.getMarketSnapshot(request.params.marketId, dependencies.store.getMarket(request.params.marketId)?.sourcePost.authorId);
+    const account = dependencies.store.getAccount(snapshot.market.sourcePost.authorId);
+    response.type("html").send(marketPage(snapshot, account?.availableBalance ?? null, dependencies.store.getPriceHistory(snapshot.market.id)));
   });
 
   app.get("/auth/x/start", (_request, response) => {

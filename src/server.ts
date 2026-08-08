@@ -15,16 +15,17 @@ const extractor = config.xaiApiKey
   : new UnavailableClaimExtractor();
 const markets = new MarketService(store, extractor, events);
 const bots = new BotRegistry(
-  process.env.X_BOT_USER_ID && process.env.X_BOT_ACCESS_TOKEN
-    ? { userId: process.env.X_BOT_USER_ID, accessToken: process.env.X_BOT_ACCESS_TOKEN }
-    : undefined,
+  store.getBotCredentials()
+    ?? (process.env.X_BOT_USER_ID && process.env.X_BOT_ACCESS_TOKEN
+      ? { userId: process.env.X_BOT_USER_ID, accessToken: process.env.X_BOT_ACCESS_TOKEN }
+      : undefined),
 );
-const oauth = new XOAuthService(config, bots);
+const oauth = new XOAuthService(config, bots, (credentials) => store.saveBotCredentials(credentials));
 const xBots = new XBotService(store, bots, markets, config.appUrl);
 const app = createApp({ store, events, markets, oauth, xBots, cronSecret: config.cronSecret });
 
 const server = app.listen(config.port, () => {
-  console.log(`Karma Markets listening on ${config.appUrl}`);
+  console.log(`Threadline listening on ${config.appUrl}`);
 });
 
 function shutdown(): void {
