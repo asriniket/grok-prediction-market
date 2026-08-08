@@ -1,0 +1,67 @@
+{
+  "elonmusk": {
+    "handle": "elonmusk",
+    "credits": 2993,
+    "breakdown": {
+      "base": 100,
+      "tenureMultiplier": 2.230448921378274,
+      "activityMultiplier": 2.041392685158225,
+      "impressionsMultiplier": 6.5735898002306214
+    },
+    "atFloor": false,
+    "confidence": "high",
+    "computedAt": "2026-08-08T21:11:35.710Z"
+  },
+  "trexkalp": {
+    "handle": "trexkalp",
+    "credits": 499,
+    "breakdown": {
+      "base": 100,
+      "tenureMultiplier": 1.3010299956639813,
+      "activityMultiplier": 1.3010299956639813,
+      "impressionsMultiplier": 2.949390006644913
+    },
+    "atFloor": false,
+    "confidence": "high",
+    "computedAt": "2026-08-08T21:11:35.710Z"
+  },
+  "paulg": {
+    "handle": "paulg",
+    "credits": 2513,
+    "breakdown": {
+      "base": 100,
+      "tenureMultiplier": 2.230448921378274,
+      "activityMultiplier": 2.041392685158225,
+      "impressionsMultiplier": 5.5181057745296185
+    },
+    "atFloor": false,
+    "confidence": "high",
+    "computedAt": "2026-08-08T21:11:35.710Z"
+  },
+  "naval": {
+    "handle": "naval",
+    "credits": 223,
+    "breakdown": {
+      "base": 100,
+      "tenureMultiplier": 2.230448921378274,
+      "activityMultiplier": 1,
+      "impressionsMultiplier": 1
+    },
+    "atFloor": false,
+    "confidence": "partial",
+    "computedAt": "2026-08-08T21:11:35.710Z"
+  },
+  "xai": {
+    "handle": "xai",
+    "credits": 2236,
+    "breakdown": {
+      "base": 100,
+      "tenureMultiplier": 1.6989700043360187,
+      "activityMultiplier": 2.041392685158225,
+      "impressionsMultiplier": 6.446161112804138
+    },
+    "atFloor": false,
+    "confidence": "high",
+    "computedAt": "2026-08-08T21:11:35.710Z"
+  }
+}
