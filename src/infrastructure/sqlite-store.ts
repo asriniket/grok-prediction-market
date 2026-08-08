@@ -4,12 +4,13 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { calculateKarma } from "../domain/karma.js";
 import { ConflictError, AppError, NotFoundError } from "../domain/errors.js";
-import { outcomePrice, sharesForBudget, type AmmState } from "../domain/lmsr.js";
+import { outcomePrice, proceedsForSale, sharesForBudget, type AmmState } from "../domain/lmsr.js";
 import type {
   Account,
   AccountHistoryInput,
   BotCredentials,
   Market,
+  MarketMetrics,
   MarketPricePoint,
   MarketSnapshot,
   MarketStatus,
@@ -143,6 +144,7 @@ export class SqliteStore {
         id TEXT PRIMARY KEY,
         market_id TEXT NOT NULL REFERENCES markets(id),
         user_id TEXT NOT NULL REFERENCES accounts(x_user_id),
+        side TEXT NOT NULL DEFAULT 'BUY' CHECK(side IN ('BUY', 'SELL')),
         outcome TEXT NOT NULL CHECK(outcome IN ('YES', 'NO')),
         credits REAL NOT NULL,
         shares REAL NOT NULL,
@@ -174,12 +176,23 @@ export class SqliteStore {
         id INTEGER PRIMARY KEY,
         market_id TEXT NOT NULL REFERENCES markets(id),
         price_yes REAL NOT NULL CHECK(price_yes >= 0 AND price_yes <= 1),
+        kind TEXT NOT NULL DEFAULT 'TRADE' CHECK(kind IN ('OPEN', 'TRADE', 'DEMO')),
         recorded_at TEXT NOT NULL
       ) STRICT;
       CREATE INDEX IF NOT EXISTS idx_market_price_points_market_id_id
       ON market_price_points(market_id, id);
     `);
+    // Existing local hackathon databases predate these columns. Keep this a
+    // forward-only, data-preserving migration instead of recreating tables.
+    this.ensureColumn("trades", "side", "TEXT NOT NULL DEFAULT 'BUY' CHECK(side IN ('BUY', 'SELL'))");
+    this.ensureColumn("market_price_points", "kind", "TEXT NOT NULL DEFAULT 'TRADE' CHECK(kind IN ('OPEN', 'TRADE', 'DEMO'))");
     this.db.exec("PRAGMA optimize");
+  }
+
+  private ensureColumn(table: "trades" | "market_price_points", column: string, definition: string): void {
+    const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Row[];
+    if (columns.some((item) => String(item.name) === column)) return;
+    this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 
   private transaction<T>(work: () => T): T {
@@ -258,7 +271,7 @@ export class SqliteStore {
         input.liquidityB,
         createdAt,
       );
-      this.insertPricePoint(id, 0.5, createdAt);
+      this.insertPricePoint(id, 0.5, createdAt, "OPEN");
       return this.getMarket(id)!;
     });
   }
@@ -292,6 +305,7 @@ export class SqliteStore {
       priceYes: outcomePrice(state, "YES"),
       priceNo: outcomePrice(state, "NO"),
       position: userId ? this.getPosition(marketId, userId) : null,
+      metrics: this.getMarketMetrics(marketId),
     };
   }
 
@@ -299,16 +313,32 @@ export class SqliteStore {
     const market = this.getMarket(marketId);
     if (!market) throw new NotFoundError("Market not found");
     const rows = this.db.prepare(`
-      SELECT market_id, price_yes, recorded_at FROM (
-        SELECT market_id, price_yes, recorded_at, id
+      SELECT market_id, price_yes, recorded_at, kind FROM (
+        SELECT market_id, price_yes, recorded_at, kind, id
         FROM market_price_points WHERE market_id = ? ORDER BY id DESC LIMIT ?
       ) ORDER BY id ASC
     `).all(marketId, limit) as Row[];
     if (rows.length === 0) {
       const state: AmmState = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
-      return [{ marketId, priceYes: outcomePrice(state, "YES"), recordedAt: market.createdAt }];
+      return [{ marketId, priceYes: outcomePrice(state, "YES"), recordedAt: market.createdAt, kind: "OPEN" }];
     }
-    return rows.map((row) => ({ marketId: String(row.market_id), priceYes: numeric(row.price_yes), recordedAt: String(row.recorded_at) }));
+    return rows.map((row) => ({
+      marketId: String(row.market_id),
+      priceYes: numeric(row.price_yes),
+      recordedAt: String(row.recorded_at),
+      kind: String(row.kind) as MarketPricePoint["kind"],
+    }));
+  }
+
+  getMarketMetrics(marketId: string): MarketMetrics {
+    const points = this.getPriceHistory(marketId, 120);
+    const moves = points.slice(1).map((point, index) => Math.abs(point.priceYes - points[index].priceYes));
+    return {
+      liquidityDepth: this.getMarket(marketId)!.liquidityB,
+      volatility: moves.length === 0 ? 0 : moves.reduce((total, movement) => total + movement, 0) / moves.length,
+      activityCount: Math.max(0, points.length - 1),
+      demoActivityCount: points.filter((point) => point.kind === "DEMO").length,
+    };
   }
 
   buy(input: { marketId: string; userId: string; outcome: Outcome; credits: number }): Trade {
@@ -331,6 +361,7 @@ export class SqliteStore {
         id: randomUUID(),
         marketId: market.id,
         userId: input.userId,
+        side: "BUY",
         outcome: input.outcome,
         credits: actualCost,
         shares,
@@ -339,7 +370,7 @@ export class SqliteStore {
       };
 
       this.db.prepare("UPDATE markets SET yes_shares = ?, no_shares = ? WHERE id = ?").run(nextYes, nextNo, market.id);
-      this.insertPricePoint(market.id, trade.priceAfter, trade.executedAt);
+      this.insertPricePoint(market.id, trade.priceAfter, trade.executedAt, "TRADE");
       this.db.prepare(`
         INSERT INTO positions (market_id, user_id, yes_shares, no_shares, net_spend)
         VALUES (?, ?, ?, ?, ?)
@@ -349,10 +380,75 @@ export class SqliteStore {
           net_spend = net_spend + excluded.net_spend
       `).run(market.id, input.userId, input.outcome === "YES" ? shares : 0, input.outcome === "NO" ? shares : 0, actualCost);
       this.db.prepare("UPDATE accounts SET available_balance = available_balance - ? WHERE x_user_id = ?").run(actualCost, input.userId);
-      this.db.prepare("INSERT INTO trades (id, market_id, user_id, outcome, credits, shares, price_after, executed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(trade.id, trade.marketId, trade.userId, trade.outcome, trade.credits, trade.shares, trade.priceAfter, trade.executedAt);
+      this.db.prepare("INSERT INTO trades (id, market_id, user_id, side, outcome, credits, shares, price_after, executed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(trade.id, trade.marketId, trade.userId, trade.side, trade.outcome, trade.credits, trade.shares, trade.priceAfter, trade.executedAt);
       this.insertLedger(input.userId, market.id, "TRADE_BUY", -actualCost, `${input.outcome} shares`);
       return trade;
+    });
+  }
+
+  sell(input: { marketId: string; userId: string; outcome: Outcome; shares: number }): Trade {
+    return this.transaction(() => {
+      const market = this.getMarket(input.marketId);
+      if (!market) throw new NotFoundError("Market not found");
+      if (market.status !== "OPEN" || new Date(market.closesAt) <= new Date()) {
+        throw new ConflictError("Trading is closed for this market");
+      }
+      if (!Number.isFinite(input.shares) || input.shares <= 0) {
+        throw new AppError("shares must be positive", 422, "INVALID_TRADE");
+      }
+      const position = this.getPosition(market.id, input.userId);
+      const owned = input.outcome === "YES" ? position?.yesShares ?? 0 : position?.noShares ?? 0;
+      if (input.shares > owned + 1e-8) {
+        throw new AppError(`You only hold ${owned.toFixed(2)} ${input.outcome} shares`, 422, "INSUFFICIENT_SHARES");
+      }
+
+      const state: AmmState = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
+      const proceeds = proceedsForSale(state, input.outcome, input.shares);
+      const nextYes = input.outcome === "YES" ? Math.max(0, market.yesShares - input.shares) : market.yesShares;
+      const nextNo = input.outcome === "NO" ? Math.max(0, market.noShares - input.shares) : market.noShares;
+      const nextState = { liquidityB: market.liquidityB, yesShares: nextYes, noShares: nextNo };
+      const trade: Trade = {
+        id: randomUUID(),
+        marketId: market.id,
+        userId: input.userId,
+        side: "SELL",
+        outcome: input.outcome,
+        credits: proceeds,
+        shares: input.shares,
+        priceAfter: outcomePrice(nextState, "YES"),
+        executedAt: now(),
+      };
+
+      this.db.prepare("UPDATE markets SET yes_shares = ?, no_shares = ? WHERE id = ?").run(nextYes, nextNo, market.id);
+      this.insertPricePoint(market.id, trade.priceAfter, trade.executedAt, "TRADE");
+      this.db.prepare(`
+        UPDATE positions SET
+          yes_shares = yes_shares - ?,
+          no_shares = no_shares - ?,
+          net_spend = net_spend - ?
+        WHERE market_id = ? AND user_id = ?
+      `).run(input.outcome === "YES" ? input.shares : 0, input.outcome === "NO" ? input.shares : 0, proceeds, market.id, input.userId);
+      this.db.prepare("UPDATE accounts SET available_balance = available_balance + ? WHERE x_user_id = ?").run(proceeds, input.userId);
+      this.db.prepare("INSERT INTO trades (id, market_id, user_id, side, outcome, credits, shares, price_after, executed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(trade.id, trade.marketId, trade.userId, trade.side, trade.outcome, trade.credits, trade.shares, trade.priceAfter, trade.executedAt);
+      this.insertLedger(input.userId, market.id, "TRADE_SELL", proceeds, `${input.outcome} shares`);
+      return trade;
+    });
+  }
+
+  applyDemoFlow(input: { marketId: string; outcome: Outcome; shares: number }): { outcome: Outcome; shares: number; priceAfter: number; executedAt: string } | null {
+    return this.transaction(() => {
+      const market = this.getMarket(input.marketId);
+      if (!market || market.status !== "OPEN" || new Date(market.closesAt) <= new Date()) return null;
+      if (!Number.isFinite(input.shares) || input.shares <= 0) return null;
+      const nextYes = input.outcome === "YES" ? market.yesShares + input.shares : market.yesShares;
+      const nextNo = input.outcome === "NO" ? market.noShares + input.shares : market.noShares;
+      const priceAfter = outcomePrice({ liquidityB: market.liquidityB, yesShares: nextYes, noShares: nextNo }, "YES");
+      const executedAt = now();
+      this.db.prepare("UPDATE markets SET yes_shares = ?, no_shares = ? WHERE id = ?").run(nextYes, nextNo, market.id);
+      this.insertPricePoint(market.id, priceAfter, executedAt, "DEMO");
+      return { outcome: input.outcome, shares: input.shares, priceAfter, executedAt };
     });
   }
 
@@ -370,7 +466,7 @@ export class SqliteStore {
       for (const rawPosition of positions) {
         const position = positionFromRow(rawPosition);
         const payout = input.outcome === null
-          ? position.netSpend
+          ? Math.max(0, position.netSpend)
           : input.outcome === "YES" ? position.yesShares : position.noShares;
         if (payout > 0) {
           this.db.prepare("UPDATE accounts SET available_balance = available_balance + ? WHERE x_user_id = ?").run(payout, position.userId);
@@ -379,7 +475,7 @@ export class SqliteStore {
             market.id,
             input.outcome === null ? "UNRESOLVABLE_REFUND" : "RESOLUTION_PAYOUT",
             payout,
-            input.outcome === null ? "Exact trade-spend refund" : `${input.outcome} settlement payout`,
+            input.outcome === null ? "Remaining net trade-spend refund" : `${input.outcome} settlement payout`,
           );
         }
       }
@@ -427,8 +523,8 @@ export class SqliteStore {
       .run(randomUUID(), userId, marketId, kind, amount, note, now());
   }
 
-  private insertPricePoint(marketId: string, priceYes: number, recordedAt: string): void {
-    this.db.prepare("INSERT INTO market_price_points (market_id, price_yes, recorded_at) VALUES (?, ?, ?)")
-      .run(marketId, priceYes, recordedAt);
+  private insertPricePoint(marketId: string, priceYes: number, recordedAt: string, kind: MarketPricePoint["kind"]): void {
+    this.db.prepare("INSERT INTO market_price_points (market_id, price_yes, kind, recorded_at) VALUES (?, ?, ?, ?)")
+      .run(marketId, priceYes, kind, recordedAt);
   }
 }

@@ -71,8 +71,9 @@ launch-specific legal advice, not an engineering conclusion.
 - Encryption and refresh rotation for bot OAuth tokens. The hackathon build
   persists tokens in its git-ignored local SQLite database; deploy only with
   encrypted, secret-managed storage.
-- User-session authentication and market-resolution authorization. The public
-  hackathon endpoints are intentionally simple and are not production auth.
+- Production-grade session security and market-resolution authorization. The
+  local build links a trader's X account and keeps a short-lived in-memory
+  session; raw hackathon endpoints remain intentionally simple.
 - Human resolution review, anti-abuse/rate limits, a queue, and a UI.
 - Video/audio generation; subscribe to `GET /events` instead.
 

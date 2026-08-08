@@ -1,17 +1,22 @@
 import { createHash, randomBytes } from "node:crypto";
 import { AppError } from "../domain/errors.js";
-import type { BotCredentials } from "../domain/types.js";
+import type { AccountHistoryInput, BotCredentials } from "../domain/types.js";
 import type { AppConfig } from "../config.js";
 import { requireXOAuth } from "../config.js";
 import { XApiClient } from "./x-client.js";
 
 const AUTHORIZE_URL = "https://x.com/i/oauth2/authorize";
 const TOKEN_URL = "https://api.x.com/2/oauth2/token";
-const REQUESTED_SCOPES = "tweet.read users.read tweet.write offline.access";
+const BOT_SCOPES = "tweet.read users.read tweet.write offline.access";
+const TRADER_SCOPES = "tweet.read users.read";
+
+type OAuthPurpose = "bot" | "trader";
 
 interface PendingAuthorization {
+  purpose: OAuthPurpose;
   verifier: string;
   expiresAt: number;
+  returnTo: string;
 }
 
 interface TokenResponse {
@@ -42,19 +47,28 @@ export class XOAuthService {
     private readonly config: AppConfig,
     private readonly bots: BotRegistry,
     private readonly onCredentials: (credentials: BotCredentials) => void = () => undefined,
+    private readonly onTrader: (history: AccountHistoryInput) => void = () => undefined,
   ) {}
 
-  start(): string {
+  startBot(): string {
+    return this.start("bot", "/");
+  }
+
+  startTrader(returnTo: string): string {
+    return this.start("trader", returnTo);
+  }
+
+  private start(purpose: OAuthPurpose, returnTo: string): string {
     const { clientId, redirectUri } = requireXOAuth(this.config);
     const state = randomBytes(32).toString("base64url");
     const verifier = randomBytes(48).toString("base64url");
     const challenge = createHash("sha256").update(verifier).digest("base64url");
-    this.pending.set(state, { verifier, expiresAt: Date.now() + 10 * 60 * 1000 });
+    this.pending.set(state, { purpose, verifier, expiresAt: Date.now() + 10 * 60 * 1000, returnTo });
     const params = new URLSearchParams({
       response_type: "code",
       client_id: clientId,
       redirect_uri: redirectUri,
-      scope: REQUESTED_SCOPES,
+      scope: purpose === "bot" ? BOT_SCOPES : TRADER_SCOPES,
       state,
       code_challenge: challenge,
       code_challenge_method: "S256",
@@ -62,7 +76,7 @@ export class XOAuthService {
     return `${AUTHORIZE_URL}?${params}`;
   }
 
-  async complete(code: string, state: string): Promise<{ username: string }> {
+  async complete(code: string, state: string): Promise<{ purpose: OAuthPurpose; username: string; userId: string; returnTo: string }> {
     const pending = this.pending.get(state);
     this.pending.delete(state);
     if (!pending || pending.expiresAt < Date.now()) throw new AppError("OAuth state is invalid or expired", 400, "OAUTH_STATE_INVALID");
@@ -90,9 +104,13 @@ export class XOAuthService {
     if (!tokens.access_token) throw new AppError("X OAuth response did not contain an access token", 502, "OAUTH_EXCHANGE_FAILED");
     const xClient = new XApiClient(tokens.access_token);
     const user = await xClient.getCurrentUser();
-    const credentials = { userId: user.id, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
-    this.bots.set(credentials);
-    this.onCredentials(credentials);
-    return { username: user.username };
+    if (pending.purpose === "bot") {
+      const credentials = { userId: user.id, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
+      this.bots.set(credentials);
+      this.onCredentials(credentials);
+    } else {
+      this.onTrader(await xClient.getAccountHistory(user.id));
+    }
+    return { purpose: pending.purpose, username: user.username, userId: user.id, returnTo: pending.returnTo };
   }
 }
