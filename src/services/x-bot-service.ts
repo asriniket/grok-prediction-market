@@ -1,6 +1,6 @@
 import { AppError } from "../domain/errors.js";
 import { outcomePrice } from "../domain/lmsr.js";
-import type { SourcePost, XPost } from "../domain/types.js";
+import type { BotCredentials, SourcePost, XPost } from "../domain/types.js";
 import type { MarketStore } from "../infrastructure/store.js";
 import { XApiClient } from "../integrations/x-client.js";
 import { BotRegistry } from "../integrations/x-oauth.js";
@@ -30,6 +30,10 @@ function marketReply(created: boolean, question: string, yesPrice: number, marke
   return [header, title, odds, destination].filter(Boolean).join("\n");
 }
 
+function isExpiredBotToken(error: unknown): boolean {
+  return error instanceof AppError && error.code === "X_AUTH_EXPIRED";
+}
+
 export class XBotService {
   private readonly pendingMentionIds = new Set<string>();
 
@@ -38,24 +42,26 @@ export class XBotService {
     private readonly bots: BotRegistry,
     private readonly markets: MarketService,
     private readonly appUrl: string,
+    private readonly refreshBot?: () => Promise<BotCredentials>,
   ) {}
 
   async poll(): Promise<{ configured: boolean; processed: number; replies: number; failures: number }> {
     const bot = this.bots.get();
     if (!bot) return { configured: false, processed: 0, replies: 0, failures: 0 };
-    const client = new XApiClient(bot.accessToken);
-    const mentions = await client.getMentions(bot.userId);
-    const chronological = mentions.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-    let processed = 0;
-    let replies = 0;
-    let failures = 0;
-    for (const mention of chronological) {
-      const result = await this.processMention(mention, client);
-      processed += result.processed ? 1 : 0;
-      replies += result.replied ? 1 : 0;
-      failures += result.failed ? 1 : 0;
-    }
-    return { configured: true, processed, replies, failures };
+    return this.withBotClient(async (activeBot, client) => {
+      const mentions = await client.getMentions(activeBot.userId);
+      const chronological = mentions.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+      let processed = 0;
+      let replies = 0;
+      let failures = 0;
+      for (const mention of chronological) {
+        const result = await this.processMention(mention, client);
+        processed += result.processed ? 1 : 0;
+        replies += result.replied ? 1 : 0;
+        failures += result.failed ? 1 : 0;
+      }
+      return { configured: true, processed, replies, failures };
+    });
   }
 
   /**
@@ -67,10 +73,9 @@ export class XBotService {
     const bot = this.bots.get();
     if (!bot) return { configured: false, accepted: 0 };
     const mentions = xActivityMentions(payload, bot.userId);
-    const client = new XApiClient(bot.accessToken);
     for (const mention of mentions) {
       queueMicrotask(() => {
-        void this.processMention(mention, client).catch((error) => {
+        void this.withBotClient((_activeBot, client) => this.processMention(mention, client)).catch((error) => {
           console.error(`X webhook mention ${mention.id} failed`, error);
         });
       });
@@ -92,6 +97,7 @@ export class XBotService {
         await this.store.markMentionProcessed(mention.id, replyId);
         return { processed: true, replied: true, failed: false };
       } catch (error) {
+        if (isExpiredBotToken(error)) throw error;
         // A bad/ambiguous post should get one useful response, but do not leak
         // API diagnostics or credentials to X.
         const message = error instanceof AppError && error.code === "EXTRACTION_UNAVAILABLE"
@@ -101,7 +107,8 @@ export class XBotService {
           const replyId = await client.postReply(mention.id, replyText(message));
           await this.store.markMentionProcessed(mention.id, replyId);
           return { processed: true, replied: true, failed: true };
-        } catch {
+        } catch (replyError) {
+          if (isExpiredBotToken(replyError)) throw replyError;
           // Polling can retry this later; webhook failures are logged so X's
           // replay API can be used to redeliver a bounded missed window.
           return { processed: false, replied: false, failed: true };
@@ -109,6 +116,18 @@ export class XBotService {
       }
     } finally {
       this.pendingMentionIds.delete(mention.id);
+    }
+  }
+
+  private async withBotClient<T>(operation: (bot: BotCredentials, client: XApiClient) => Promise<T>): Promise<T> {
+    const current = this.bots.get();
+    if (!current) throw new AppError("The market bot is not authorized", 503, "BOT_REAUTH_REQUIRED");
+    try {
+      return await operation(current, new XApiClient(current.accessToken));
+    } catch (error) {
+      if (!isExpiredBotToken(error) || !this.refreshBot) throw error;
+      const refreshed = await this.refreshBot();
+      return operation(refreshed, new XApiClient(refreshed.accessToken));
     }
   }
 

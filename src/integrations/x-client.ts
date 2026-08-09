@@ -34,6 +34,9 @@ export class XApiClient {
       ...init,
       headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
+    if (response.status === 401) {
+      throw new AppError("X OAuth access token expired or was revoked", 502, "X_AUTH_EXPIRED");
+    }
     if (!response.ok) {
       const text = await response.text();
       throw new AppError(`X API request failed (${response.status}): ${text.slice(0, 280)}`, 502, "X_API_ERROR");
