@@ -4,6 +4,7 @@ import type { ClaimDraft, SourcePost } from "../domain/types.js";
 
 const UNRESOLVABLE_SENTINEL = "UNRESOLVABLE CLAIM";
 const META_MARKET_QUESTION = /\b(?:this|the)\s+(?:claim|post|statement)\b.*\b(?:resolv\w*|falsif\w*|objectiv\w*|market\w*)\b/i;
+const MAX_MARKET_HORIZON_YEARS = 10;
 
 const claimSchema = z.object({
   question: z.string().min(12).max(240),
@@ -96,8 +97,10 @@ export function validateClaimDraft(draft: ClaimDraft, now = new Date()): ClaimDr
     throw new AppError("The claim is not a valid binary, resolvable market question", 422, "UNRESOLVABLE_CLAIM");
   }
   const closesAt = new Date(parsed.closesAt);
-  if (Number.isNaN(closesAt.valueOf()) || closesAt <= now || closesAt > new Date(now.valueOf() + 366 * 24 * 60 * 60 * 1000)) {
-    throw new AppError("Market close must be between now and one year from now", 422, "INVALID_CLOSE_DATE");
+  const latestAllowedClose = new Date(now);
+  latestAllowedClose.setUTCFullYear(latestAllowedClose.getUTCFullYear() + MAX_MARKET_HORIZON_YEARS);
+  if (Number.isNaN(closesAt.valueOf()) || closesAt <= now || closesAt > latestAllowedClose) {
+    throw new AppError(`Market close must be between now and ${MAX_MARKET_HORIZON_YEARS} years from now`, 422, "INVALID_CLOSE_DATE");
   }
   const criteria = parsed.resolutionCriteria.map((criterion) => criterion.trim()).filter(Boolean);
   if (criteria.length === 0) throw new AppError("A market needs resolution criteria", 422, "UNRESOLVABLE_CLAIM");

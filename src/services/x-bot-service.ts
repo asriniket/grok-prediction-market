@@ -32,6 +32,14 @@ function isExpiredBotToken(error: unknown): boolean {
   return error instanceof AppError && error.code === "X_AUTH_EXPIRED";
 }
 
+function marketCreationFailureReply(error: unknown): string {
+  if (!(error instanceof AppError)) return "I couldn't turn that into an objectively resolvable market. Try a concrete, time-bound claim.";
+  if (error.code === "EXTRACTION_UNAVAILABLE") return "I need the market AI configured before I can open a market.";
+  if (error.code === "XAI_ERROR" || error.code === "XAI_INVALID_RESPONSE") return "Market AI is temporarily unavailable. Try again shortly.";
+  if (error.code === "INVALID_CLOSE_DATE") return "That market deadline is outside Threadline's supported range. Try a date within the next 10 years.";
+  return "I couldn't turn that into an objectively resolvable market. Try a concrete, time-bound claim.";
+}
+
 export class XBotService {
   private readonly pendingMentionIds = new Set<string>();
 
@@ -92,11 +100,9 @@ export class XBotService {
         return { processed: true, replied: true, failed: false };
       } catch (error) {
         if (isExpiredBotToken(error)) throw error;
-        // A bad/ambiguous post should get one useful response, but do not leak
-        // API diagnostics or credentials to X.
-        const message = error instanceof AppError && error.code === "EXTRACTION_UNAVAILABLE"
-          ? "I need the claim extractor configured before I can open a market."
-          : "I couldn't turn that into an objectively resolvable market. Reply to a time-bound, falsifiable claim and try again.";
+        // Reply with an actionable product error without leaking upstream API
+        // diagnostics or credentials to X.
+        const message = marketCreationFailureReply(error);
         try {
           const replyId = await client.postReply(mention.id, replyText(message));
           await this.store.markMentionProcessed(mention.id, replyId);

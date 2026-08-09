@@ -82,6 +82,16 @@ describe("claim validation", () => {
     expect(() => validateClaimDraft({ ...claim, question: "UNRESOLVABLE CLAIM", closesAt })).toThrow(/marketable/i);
     expect(() => validateClaimDraft({ ...claim, question: "Is this claim objectively resolvable?", closesAt })).toThrow(/marketable/i);
   });
+
+  it("accepts long-horizon markets up to ten years and rejects farther deadlines", () => {
+    const now = new Date("2026-08-09T00:00:00.000Z");
+    expect(validateClaimDraft({
+      ...claim,
+      question: "Will Bitcoin reach $100K by the end of 2027?",
+      closesAt: "2027-12-31T23:59:59.000Z",
+    }, now)).toMatchObject({ question: "Will Bitcoin reach $100K by the end of 2027?" });
+    expect(() => validateClaimDraft({ ...claim, closesAt: "2036-08-10T00:00:00.000Z" }, now)).toThrow(/10 years/i);
+  });
 });
 
 describe("Grok settlement evidence", () => {
