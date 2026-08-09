@@ -8,6 +8,7 @@ import { EventBus } from "./services/event-bus.js";
 import { MarketService } from "./services/market-service.js";
 import { SessionStore } from "./services/session-store.js";
 import { XBotService } from "./services/x-bot-service.js";
+import { crcResponseToken, hasValidWebhookSignature } from "./services/x-webhook.js";
 import { marketIndexPage, marketPage, portfolioPage } from "./ui/market-pages.js";
 
 const outcomeSchema = z.enum(["YES", "NO"]);
@@ -41,7 +42,13 @@ export interface AppDependencies {
   oauth: XOAuthService;
   xBots: XBotService;
   sessions: SessionStore;
-  cronSecret?: string;
+  internalJobSecret?: string;
+  /** X API Consumer/API Secret used only for webhook CRC and signature checks. */
+  xConsumerSecret?: string;
+}
+
+interface RequestWithRawBody extends Request {
+  rawBody?: Buffer;
 }
 
 function readCookie(request: Request, name: string): string | undefined {
@@ -54,13 +61,13 @@ function sessionUserId(request: Request, sessions: SessionStore): string | null 
   return sessions.getUserId(readCookie(request, "threadline_session"));
 }
 
-function requireSettlementAuthorization(request: Request, cronSecret?: string): void {
+function requireInternalJobAuthorization(request: Request, internalJobSecret?: string): void {
   // Settlement changes every holder's balance. It must never be exposed as a
   // public HTTP action, including in a local hackathon environment.
-  if (!cronSecret) {
-    throw new AppError("Set CRON_SECRET before enabling market settlement", 503, "SETTLEMENT_NOT_CONFIGURED");
+  if (!internalJobSecret) {
+    throw new AppError("Set INTERNAL_JOB_SECRET before enabling market settlement", 503, "SETTLEMENT_NOT_CONFIGURED");
   }
-  if (request.get("authorization") !== `Bearer ${cronSecret}`) {
+  if (request.get("authorization") !== `Bearer ${internalJobSecret}`) {
     throw new AppError("Unauthorized", 401, "UNAUTHORIZED");
   }
 }
@@ -77,9 +84,35 @@ function asyncRoute(handler: (request: Request, response: Response) => Promise<v
 export function createApp(dependencies: AppDependencies) {
   const app = express();
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "100kb" }));
+  app.use(express.json({
+    limit: "100kb",
+    // X signs the exact JSON bytes it delivers. Preserve them before parsing
+    // so the webhook route can reject forged events.
+    verify: (request, _response, buffer) => {
+      (request as RequestWithRawBody).rawBody = Buffer.from(buffer);
+    },
+  }));
 
   app.get("/health", (_request, response) => response.json({ ok: true }));
+
+  app.get("/webhooks/x", asyncRoute(async (request, response) => {
+    const secret = dependencies.xConsumerSecret;
+    if (!secret) throw new AppError("Set X_CONSUMER_SECRET before registering the X webhook", 503, "WEBHOOK_NOT_CONFIGURED");
+    const crcToken = z.string().min(1).max(1_024).parse(request.query.crc_token);
+    response.json({ response_token: crcResponseToken(secret, crcToken) });
+  }));
+
+  app.post("/webhooks/x", asyncRoute(async (request, response) => {
+    const secret = dependencies.xConsumerSecret;
+    if (!secret) throw new AppError("Set X_CONSUMER_SECRET before receiving X webhook events", 503, "WEBHOOK_NOT_CONFIGURED");
+    const rawBody = (request as RequestWithRawBody).rawBody;
+    if (!rawBody || !hasValidWebhookSignature(secret, rawBody, request.get("x-twitter-webhooks-signature"))) {
+      throw new AppError("Invalid X webhook signature", 401, "INVALID_WEBHOOK_SIGNATURE");
+    }
+    // Acknowledge inside X's delivery window; XBotService handles valid
+    // mention work asynchronously and retains the normal duplicate guards.
+    response.status(202).json(dependencies.xBots.acceptAccountActivity(request.body));
+  }));
 
   app.get(["/", "/markets"], asyncRoute(async (request, response) => {
     const markets = await dependencies.store.listMarkets(50);
@@ -187,7 +220,7 @@ export function createApp(dependencies: AppDependencies) {
   }));
 
   app.post("/api/markets/:marketId/resolve", asyncRoute(async (request, response) => {
-    requireSettlementAuthorization(request, dependencies.cronSecret);
+    requireInternalJobAuthorization(request, dependencies.internalJobSecret);
     const body = z.object({ outcome: outcomeSchema.nullable(), sources: z.array(z.string().url()).max(10) }).parse(request.body);
     const market = await dependencies.markets.resolve({ marketId: String(request.params.marketId), outcome: body.outcome as Outcome | null, sources: body.sources });
     response.json({ market, snapshot: await dependencies.store.getMarketSnapshot(market.id) });
@@ -236,14 +269,14 @@ export function createApp(dependencies: AppDependencies) {
   }));
 
   app.post("/internal/jobs/poll-x", asyncRoute(async (request, response) => {
-    if (dependencies.cronSecret && request.get("authorization") !== `Bearer ${dependencies.cronSecret}`) {
+    if (dependencies.internalJobSecret && request.get("authorization") !== `Bearer ${dependencies.internalJobSecret}`) {
       throw new AppError("Unauthorized", 401, "UNAUTHORIZED");
     }
     response.json(await dependencies.xBots.poll());
   }));
 
   app.post("/internal/jobs/resolve-markets", asyncRoute(async (request, response) => {
-    requireSettlementAuthorization(request, dependencies.cronSecret);
+    requireInternalJobAuthorization(request, dependencies.internalJobSecret);
     const body = z.object({
       marketId: z.string().uuid().optional(),
       limit: z.number().int().min(1).max(50).optional(),
