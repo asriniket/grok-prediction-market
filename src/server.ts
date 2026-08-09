@@ -43,7 +43,7 @@ const oauth = new XOAuthService(
   (credentials) => store.saveBotCredentials(credentials),
   (history) => markets.createAccount(history),
 );
-const xBots = new XBotService(store, bots, markets, config.appUrl);
+const xBots = new XBotService(store, bots, markets, config.appUrl, () => oauth.refreshBot());
 const app = createApp({
   store,
   events,

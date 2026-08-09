@@ -46,8 +46,8 @@ export class XOAuthService {
   constructor(
     private readonly config: AppConfig,
     private readonly bots: BotRegistry,
-    private readonly onCredentials: (credentials: BotCredentials) => void = () => undefined,
-    private readonly onTrader: (history: AccountHistoryInput) => void = () => undefined,
+    private readonly onCredentials: (credentials: BotCredentials) => unknown | Promise<unknown> = () => undefined,
+    private readonly onTrader: (history: AccountHistoryInput) => unknown | Promise<unknown> = () => undefined,
   ) {}
 
   startBot(): string {
@@ -88,6 +88,48 @@ export class XOAuthService {
       code_verifier: pending.verifier,
       client_id: clientId,
     });
+    const tokens = await this.exchangeTokens(body, clientId, clientSecret, "OAUTH_EXCHANGE_FAILED");
+    if (!tokens.access_token) throw new AppError("X OAuth response did not contain an access token", 502, "OAUTH_EXCHANGE_FAILED");
+    const xClient = new XApiClient(tokens.access_token);
+    const user = await xClient.getCurrentUser();
+    if (pending.purpose === "bot") {
+      const credentials = { userId: user.id, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
+      this.bots.set(credentials);
+      await this.onCredentials(credentials);
+    } else {
+      await this.onTrader(await xClient.getAccountHistory(user.id));
+    }
+    return { purpose: pending.purpose, username: user.username, userId: user.id, returnTo: pending.returnTo };
+  }
+
+  /** Refreshes the one bot OAuth2 credential and persists the rotated token. */
+  async refreshBot(): Promise<BotCredentials> {
+    const current = this.bots.get();
+    if (!current?.refreshToken) throw new AppError("The market bot needs to be authorized with offline access", 503, "BOT_REAUTH_REQUIRED");
+    const { clientId, clientSecret } = requireXOAuth(this.config);
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: current.refreshToken,
+      client_id: clientId,
+    });
+    const tokens = await this.exchangeTokens(body, clientId, clientSecret, "BOT_TOKEN_REFRESH_FAILED");
+    if (!tokens.access_token) throw new AppError("X OAuth refresh did not contain an access token", 502, "BOT_TOKEN_REFRESH_FAILED");
+    const refreshed = {
+      userId: current.userId,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token ?? current.refreshToken,
+    };
+    this.bots.set(refreshed);
+    await this.onCredentials(refreshed);
+    return refreshed;
+  }
+
+  private async exchangeTokens(
+    body: URLSearchParams,
+    clientId: string,
+    clientSecret: string,
+    errorCode: "OAUTH_EXCHANGE_FAILED" | "BOT_TOKEN_REFRESH_FAILED",
+  ): Promise<TokenResponse> {
     const response = await fetch(TOKEN_URL, {
       method: "POST",
       headers: {
@@ -98,19 +140,8 @@ export class XOAuthService {
     });
     if (!response.ok) {
       const detail = await response.text();
-      throw new AppError(`X OAuth token exchange failed (${response.status}): ${detail.slice(0, 240)}`, 502, "OAUTH_EXCHANGE_FAILED");
+      throw new AppError(`X OAuth token request failed (${response.status}): ${detail.slice(0, 240)}`, 502, errorCode);
     }
-    const tokens = await response.json() as TokenResponse;
-    if (!tokens.access_token) throw new AppError("X OAuth response did not contain an access token", 502, "OAUTH_EXCHANGE_FAILED");
-    const xClient = new XApiClient(tokens.access_token);
-    const user = await xClient.getCurrentUser();
-    if (pending.purpose === "bot") {
-      const credentials = { userId: user.id, accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
-      this.bots.set(credentials);
-      this.onCredentials(credentials);
-    } else {
-      this.onTrader(await xClient.getAccountHistory(user.id));
-    }
-    return { purpose: pending.purpose, username: user.username, userId: user.id, returnTo: pending.returnTo };
+    return response.json() as Promise<TokenResponse>;
   }
 }
