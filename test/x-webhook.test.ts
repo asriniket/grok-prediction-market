@@ -85,10 +85,10 @@ describe("X webhook helpers", () => {
 describe("X Account Activity webhook endpoint", () => {
   it("serves CRC and only accepts an event with a valid raw-body signature", async () => {
     const secret = "consumer-secret";
-    const acceptAccountActivity = vi.fn().mockReturnValue({ configured: true, accepted: 1 });
+    const acceptWebhookEvents = vi.fn().mockReturnValue({ configured: true, accepted: 1 });
     const app = createApp({
       xConsumerSecret: secret,
-      xBots: { acceptAccountActivity },
+      xBots: { acceptWebhookEvents },
     } as unknown as AppDependencies);
     const server = app.listen(0);
     const address = server.address() as AddressInfo;
@@ -109,7 +109,7 @@ describe("X Account Activity webhook endpoint", () => {
       });
       expect(event.status).toBe(202);
       await expect(event.json()).resolves.toEqual({ configured: true, accepted: 1 });
-      expect(acceptAccountActivity).toHaveBeenCalledWith(JSON.parse(payload));
+      expect(acceptWebhookEvents).toHaveBeenCalledWith(JSON.parse(payload));
 
       const rejected = await fetch(`${baseUrl}/webhooks/x`, {
         method: "POST",

@@ -59,11 +59,11 @@ export class XBotService {
   }
 
   /**
-   * Accepts a signed Account Activity payload and queues its mentions after
-   * returning HTTP 202. X requires a fast acknowledgement; the potentially
-   * slower Grok market-creation call must not keep the webhook request open.
+   * Accepts a signed X webhook payload and queues its mentions after returning
+   * HTTP 202. X requires a fast acknowledgement; the potentially slower Grok
+   * market-creation call must not keep the webhook request open.
    */
-  acceptAccountActivity(payload: unknown): { configured: boolean; accepted: number } {
+  acceptWebhookEvents(payload: unknown): { configured: boolean; accepted: number } {
     const bot = this.bots.get();
     if (!bot) return { configured: false, accepted: 0 };
     const mentions = xWebhookMentions(payload, bot.userId);
