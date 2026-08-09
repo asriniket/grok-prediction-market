@@ -30,11 +30,15 @@ type Snapshot = {
     sourcePost?: { text?: string; authorHandle?: string };
   };
   priceYes: number;
+  metrics?: { activityCount?: number; demoActivityCount?: number };
 };
 
 export class Engine {
   private history = new Map<string, number[]>();
+  /** Keyed by userId; a TraderLine carries the display handle. */
   private traders = new Map<string, TraderLine>();
+  private learning = new Set<string>();
+  private volumes = new Map<string, number>();
   private recent: string[] = [];
   private swings: Array<{ marketId: string; question: string; from: number; to: number }> = [];
   private lastPrice = new Map<string, number>();
@@ -85,10 +89,11 @@ export class Engine {
         id,
         question: s.market.question,
         price,
-        // The engine does not report volume or trade count on a snapshot; both
-        // are counted from observed trade events instead of guessed.
-        volume: 0,
-        tradeCount: 0,
+        // Volume in credits is summed from observed trade events; the tick
+        // count comes from the snapshot's own activity metric, so the tape
+        // reads as alive even for movement this process never witnessed.
+        volume: Math.round(this.volumes.get(id) ?? 0),
+        tradeCount: Number(s.metrics?.activityCount ?? 0),
         status: s.market.status,
         sourceHandle: s.market.sourcePost?.authorHandle ?? 'unknown',
         sourceClaim: s.market.sourcePost?.text,
@@ -114,6 +119,26 @@ export class Engine {
     if (!line || this.recent.includes(line)) return;
     this.recent.push(line);
     if (this.recent.length > 40) this.recent.shift();
+  }
+
+  /**
+   * Bootstrap the trader roster from the public leaderboard, so the karma
+   * segments have someone to profile before this process happens to witness
+   * a trade. Live trades then keep individual balances fresh.
+   */
+  async loadRoster(): Promise<void> {
+    const res = await fetch(`${this.base}/api/accounts`).catch(() => undefined);
+    const body = (await res?.json().catch(() => undefined)) as
+      | { accounts?: Array<{ xUserId?: string; handle?: string; karmaSeed?: number; availableBalance?: number }> }
+      | undefined;
+    for (const a of body?.accounts ?? []) {
+      if (!a?.xUserId || !a.handle) continue;
+      this.traders.set(String(a.xUserId), {
+        handle: String(a.handle).replace(/^@/, ''),
+        credits: Number(a.availableBalance ?? 0),
+        seedCredits: Number(a.karmaSeed ?? a.availableBalance ?? 0),
+      });
+    }
   }
 
   /** Subscribe to the engine's SSE feed. Movement drives breaking interrupts. */
@@ -154,6 +179,54 @@ export class Engine {
     })();
   }
 
+  /**
+   * A trade event carries only a userId; the face of the trader — handle,
+   * karma seed, live balance — lives on the account. Fetched lazily per
+   * trader and refreshed after every trade, so the karma board tracks P&L.
+   */
+  private async learnTrader(userId: string): Promise<void> {
+    if (!userId || this.learning.has(userId)) return;
+    this.learning.add(userId);
+    try {
+      const res = await fetch(`${this.base}/api/accounts/${encodeURIComponent(userId)}`).catch(() => undefined);
+      const body = (await res?.json().catch(() => undefined)) as
+        | { account?: { handle?: string; karmaSeed?: number; availableBalance?: number } }
+        | undefined;
+      const a = body?.account;
+      if (!a?.handle) return;
+      const prior = this.traders.get(userId);
+      this.traders.set(userId, {
+        handle: String(a.handle).replace(/^@/, ''),
+        credits: Number(a.availableBalance ?? prior?.credits ?? 0),
+        seedCredits: Number(a.karmaSeed ?? prior?.seedCredits ?? a.availableBalance ?? 0),
+      });
+    } finally {
+      this.learning.delete(userId);
+    }
+  }
+
+  private trackSwing(marketId: string, question: string, price: number): void {
+    if (!Number.isFinite(price)) return;
+    const prev = this.lastPrice.get(marketId);
+    this.lastPrice.set(marketId, price);
+    if (prev === undefined) return;
+    // Coalesce per market: a contract that keeps moving updates its one pending
+    // story rather than queueing a fresh interrupt per tick — and if it round
+    // trips back under the threshold, there is no story any more.
+    const pending = this.swings.find((s) => s.marketId === marketId);
+    if (pending) {
+      pending.to = price;
+      if (Math.abs(pending.to - pending.from) < 0.08) {
+        this.swings = this.swings.filter((s) => s !== pending);
+      }
+      return;
+    }
+    if (Math.abs(price - prev) >= 0.08) {
+      this.swings.push({ marketId, question, from: prev, to: price });
+      if (this.swings.length > 3) this.swings.shift();
+    }
+  }
+
   private ingest(event: any): void {
     const type = String(event?.type ?? '');
     const p = event?.payload ?? {};
@@ -166,27 +239,28 @@ export class Engine {
     }
 
     if (type === 'market.trade.executed') {
+      // Payload shape is { trade, priceYes, priceNo } — the identity fields
+      // live on the trade itself, not at the top level.
+      const trade = p.trade ?? {};
       const price = Number(p.priceYes);
-      const handle = String(p.handle ?? p.userId ?? '').replace(/^@/, '');
-      if (handle) {
-        const existing = this.traders.get(handle);
-        const credits = Number(p.balance ?? p.availableBalance ?? existing?.credits ?? 0);
-        this.traders.set(handle, {
-          handle,
-          credits,
-          seedCredits: Number(p.seed ?? existing?.seedCredits ?? credits),
-        });
+      const userId = String(trade.userId ?? '');
+      const credits = Number(trade.credits);
+      if (Number.isFinite(credits) && credits > 0) {
+        this.volumes.set(marketId, (this.volumes.get(marketId) ?? 0) + credits);
       }
-      this.note(`${handle ? '@' + handle : 'someone'} bought ${p.outcome ?? '?'} on ${marketId}${Number.isFinite(price) ? ` at ${(price * 100).toFixed(1)}%` : ''}`);
+      const known = this.traders.get(userId)?.handle;
+      void this.learnTrader(userId);
+      this.note(
+        `${known ? '@' + known : 'a trader'} ${trade.side === 'SELL' ? 'sold' : 'bought'} ${trade.outcome ?? '?'}${Number.isFinite(credits) ? ` for ${Math.round(credits)} credits` : ''} on ${question.slice(0, 60)}${Number.isFinite(price) ? ` — now ${(price * 100).toFixed(1)}%` : ''}`,
+      );
+      this.trackSwing(marketId, question, price);
+      return;
+    }
 
-      if (Number.isFinite(price)) {
-        const prev = this.lastPrice.get(marketId);
-        this.lastPrice.set(marketId, price);
-        if (prev !== undefined && Math.abs(price - prev) >= 0.08) {
-          this.swings.push({ marketId, question, from: prev, to: price });
-          if (this.swings.length > 3) this.swings.shift();
-        }
-      }
+    // Background demo flow: anonymous, but it moves the book — so it feeds
+    // swing detection (breaking interrupts) without inventing a trader.
+    if (type === 'market.demo.pulse') {
+      this.trackSwing(marketId, question, Number(p.priceAfter));
       return;
     }
 

@@ -87,6 +87,12 @@ export function createApp(dependencies: AppDependencies) {
     response.json({ account });
   }));
 
+  // Public karma leaderboard — powers the broadcast's trader roster. Balances
+  // here are already public product surface (they air on the live channel).
+  app.get("/api/accounts", asyncRoute(async (_request, response) => {
+    response.json({ accounts: await dependencies.store.listAccounts(20) });
+  }));
+
   app.get("/api/me", asyncRoute(async (request, response) => {
     const userId = sessionUserId(request, dependencies.sessions);
     if (!userId) throw new AppError("Link your X account to trade with your own karma wallet", 401, "X_ACCOUNT_NOT_LINKED");

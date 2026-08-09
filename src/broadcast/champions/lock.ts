@@ -35,19 +35,18 @@ async function main() {
   for (const side of sides) {
     const ref = await generateReference(side);
     const bytes = await download(ref.url);
-    const name = side === 'affirmative' ? 'vera' : 'kane';
-    const file = resolve(OUT_DIR, `${name}.jpg`);
+    const file = resolve(OUT_DIR, `${side}.jpg`);
     writeFileSync(file, bytes);
 
-    locked[name] = {
+    locked[side] = {
       side,
-      file: `assets/champions/${name}.jpg`,
+      file: `assets/champions/${side}.jpg`,
       bytes: bytes.byteLength,
       sha256: createHash('sha256').update(bytes).digest('hex'),
       prompt: ref.prompt,
       sourceUrl: ref.url,
     };
-    console.log(`locked ${name}: ${bytes.byteLength} bytes -> assets/champions/${name}.jpg`);
+    console.log(`locked ${side}: ${bytes.byteLength} bytes -> assets/champions/${side}.jpg`);
   }
 
   // The anchor is locked alongside the debaters, but is not part of the

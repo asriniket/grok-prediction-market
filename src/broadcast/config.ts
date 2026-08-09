@@ -28,6 +28,13 @@ export const config = {
   engineUrl: opt('ENGINE_URL', app.appUrl),
   /** Port the channel itself listens on. Not the engine's port. */
   broadcastPort: Number(opt('BROADCAST_PORT', '8082')),
+  /**
+   * On-camera clip generation. On by default — presenters on camera are what
+   * makes the channel read as television rather than a narrated dashboard.
+   * Every clip is a paid video render, so NEWS_VIDEO=0 remains available as
+   * the spend kill-switch for voice-over-only rehearsal runs.
+   */
+  videoEnabled: opt('NEWS_VIDEO', '1') === '1',
 } as const;
 
 export function requireXaiKey(): string {

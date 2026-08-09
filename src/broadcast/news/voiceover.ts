@@ -23,12 +23,45 @@ const OUT_DIR = resolve(process.cwd(), 'public/media');
 /** Fixed per speaker — a commentator whose voice changes is not a character. */
 const SPEAKER_VOICES: Record<Speaker, string> = {
   anchor: process.env.VO_VOICE ?? 'eve',
-  vera: 'ara',
-  kane: 'leo',
+  cohost: 'sal',
+  bull: 'ara',
+  bear: 'leo',
+  reporter: 'rex',
+  // On camera her clip carries its own voice; this only backs rehearsal mode.
+  weather: 'ara',
 };
 
 const INSTRUCTIONS =
   'You are a text-to-speech renderer. Speak the user message back VERBATIM as your spoken reply. Do not greet, acknowledge, summarise, or add any words of your own.';
+
+/**
+ * Loudness-normalise speech PCM to a broadcast bed.
+ *
+ * Measured: raw realtime-voice output sits near -21 LUFS while Grok Imagine
+ * clip audio sits near -12 LUFS — a 9 dB jump between lanes that viewers hear
+ * as the channel lurching. VO is normalised here to ≈ -16 dBFS RMS and the
+ * player pulls clip audio down to the same target, so a beat handoff is level.
+ */
+function normalize(pcm: Buffer, targetDb = -16): Buffer {
+  const n = Math.floor(pcm.length / 2);
+  if (n === 0) return pcm;
+  let sumSq = 0;
+  let peak = 1;
+  for (let i = 0; i < n; i++) {
+    const s = pcm.readInt16LE(i * 2);
+    sumSq += s * s;
+    const a = Math.abs(s);
+    if (a > peak) peak = a;
+  }
+  const rmsDb = 20 * Math.log10(Math.sqrt(sumSq / n) / 32768 || 1e-9);
+  const gain = Math.min(10 ** ((targetDb - rmsDb) / 20), (0.98 * 32767) / peak);
+  if (Math.abs(gain - 1) < 0.05) return pcm;
+  const out = Buffer.alloc(pcm.length);
+  for (let i = 0; i < n; i++) {
+    out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(pcm.readInt16LE(i * 2) * gain))), i * 2);
+  }
+  return out;
+}
 
 function wav(pcm: Buffer, rate = 24000): Buffer {
   const h = Buffer.alloc(44);
@@ -72,7 +105,7 @@ export async function renderVoiceover(line: string, id: string, speaker: Speaker
     const file = `vo-${id}.wav`;
     const path = resolve(OUT_DIR, file);
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, wav(pcm));
+    writeFileSync(path, wav(normalize(pcm)));
     return { audioPath: `/live/media/${file}`, seconds: pcm.length / 48000, renderMs: Date.now() - started };
   } finally {
     s.close();

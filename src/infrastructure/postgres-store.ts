@@ -272,6 +272,16 @@ export class PostgresStore {
     return this.accountOn(this.pool as unknown as Q, xUserId);
   }
 
+  /** Karma leaderboard: biggest seeds first. Powers the broadcast roster. */
+  async listAccounts(limit = 20): Promise<Account[]> {
+    const { rows } = await this.pool.query(
+      "SELECT x_user_id FROM accounts ORDER BY karma_seed DESC LIMIT $1",
+      [Math.max(1, Math.min(100, limit))],
+    );
+    const accounts = await Promise.all(rows.map((r) => this.getAccount(String(r.x_user_id))));
+    return accounts.filter((a): a is Account => a !== null);
+  }
+
   // -------------------------------------------------------------- markets
 
   async createMarket(input: {

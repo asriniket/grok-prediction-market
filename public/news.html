@@ -3,124 +3,225 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Karma Markets — Live</title>
+<title>Threadline — Live</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%230d0d0d'/%3E%3Cpath d='M18 66 40 44 55 56 82 30' stroke='%23d5ff52' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <style>
+  /* Threadline broadcast skin: the channel wears the product's own colours —
+     near-black ground, warm ink, lime for up/brand accents, coral for down.
+     Red survives only where television demands it: LIVE and BREAKING. */
   :root{
-    --ink:#0a1930; --ink2:#122a4d;
-    --red:#c8102e; --blue:#0b4da2; --blue2:#083b7d;
-    --up:#00c176; --down:#ff4b4b; --gold:#ffb400;
-    --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    --ground:#0d0d0d; --panel:#171615; --panel2:#111110; --line:#2c2a29;
+    --ink:#f5f1e8; --muted:#a59f98;
+    --red:#e5484d;
+    --up:#d5ff52; --down:#ff7967; --acc:#d5ff52; --accInk:#131308;
+    --sans:Inter,-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:#000;color:#fff;font-family:var(--sans);overflow:hidden;height:100vh}
-  .tv{display:grid;grid-template-rows:auto 1fr auto auto auto;height:100vh}
+  body{margin:0;background:#000;color:var(--ink);font-family:var(--sans);overflow:hidden;height:100vh}
+  /* minmax(0,1fr) pins the single column to the viewport: without it the
+     marquee tickers' intrinsic width leaks into grid track sizing in Chrome
+     and the whole frame silently grows past the screen. */
+  .tv{display:grid;grid-template-rows:auto 1fr auto auto auto;grid-template-columns:minmax(0,1fr);
+      height:100vh;width:100vw;overflow:hidden}
+  .strip,.lower{min-width:0}
 
   /* ---------- top strip ---------- */
-  .strip{display:flex;align-items:stretch;background:#0a1930;border-bottom:1px solid #071223;height:34px}
-  .livebox{display:flex;align-items:center;gap:7px;background:var(--red);padding:0 13px;font-size:11px;
-           font-weight:700;letter-spacing:.16em}
+  .strip{display:flex;align-items:stretch;background:var(--ground);border-bottom:1px solid var(--line);height:36px}
+  .brandbox{display:flex;align-items:center;background:var(--ground);color:var(--ink);padding:0 14px;
+            font-weight:800;font-size:16px;letter-spacing:-.05em;border-right:1px solid var(--line)}
+  .brandbox b{color:var(--acc);font-weight:800}
+  .livebox{display:flex;align-items:center;gap:7px;background:var(--red);color:#fff;padding:0 12px;font-size:11px;
+           font-weight:800;letter-spacing:.18em}
   .livebox i{width:7px;height:7px;border-radius:50%;background:#fff;animation:blink 1.2s infinite}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
   .stripwrap{flex:1;overflow:hidden;position:relative}
-  .stripscroll{display:inline-block;white-space:nowrap;padding-left:100%;animation:sc 38s linear infinite;line-height:34px}
-  .sitem{display:inline-block;margin-right:30px;font-family:var(--mono);font-size:12px;font-weight:700}
-  .sitem .nm{color:#9fc0e8;margin-right:9px;font-weight:600}
-  .clock{display:flex;align-items:center;padding:0 13px;background:#071223;font-family:var(--mono);font-size:11px;color:#9fc0e8}
+  .stripscroll{display:inline-block;white-space:nowrap;padding-left:100%;animation:sc 70s linear infinite;line-height:36px}
+  .sitem{display:inline-block;margin-right:30px;font-family:var(--mono);font-size:12.5px;font-weight:700}
+  .sitem .nm{color:var(--muted);margin-right:9px;font-weight:600}
+  .clock{display:flex;align-items:center;gap:8px;padding:0 14px;background:var(--ground);border-left:1px solid var(--line);
+         font-family:var(--mono);font-size:12px;color:var(--ink);font-weight:700}
+  .clock .tz{color:var(--muted);font-size:10px;font-weight:600}
   @keyframes sc{to{transform:translateX(-100%)}}
 
   /* ---------- picture ---------- */
   .shot{position:relative;overflow:hidden;background:#000;min-height:0}
-  .shot video,.shot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .shot video,.shot>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:right .35s ease}
+  /* Squeeze-back for the headline rail: the picture cedes the right panel
+     instead of the rail covering whoever sits frame-right at the desk. */
+  .shot.squeeze #idle,.shot.squeeze #talk,.shot.squeeze #poster{right:31%;width:auto;left:0}
   #idle,#talk{opacity:0;transition:opacity .4s ease}
   #idle.on,#talk.on{opacity:1}
   #poster{transition:opacity .6s ease}
   #poster.off{opacity:0}
-  .vig{position:absolute;inset:0;pointer-events:none;background:linear-gradient(to top,rgba(2,8,18,.72) 0,rgba(0,0,0,0) 30%)}
-
-  /* over-the-shoulder graphic */
-  .ots{position:absolute;top:3.2%;right:3%;width:40%;max-width:520px;
-       background:linear-gradient(170deg,rgba(12,42,84,.97),rgba(6,20,44,.97));
-       border:1px solid #2a5fa8;border-radius:3px;box-shadow:0 18px 50px rgba(0,0,0,.65);
-       overflow:hidden;transition:opacity .35s ease,transform .35s ease}
-  /* Graphics mode: cut to a full-frame board with the set dimmed behind it,
-     rather than parking a card over the presenter's face. */
-  .ots.big{top:5%;right:4%;left:4%;bottom:5%;width:auto;max-width:none;display:flex;flex-direction:column}
-  .ots.big .body{flex:1;display:flex;flex-direction:column}
-  .ots.big .q{font-size:17px;-webkit-line-clamp:2;min-height:auto;margin-bottom:6px}
-  .ots.big .big2{font-size:64px}
-  .ots.big .chg{font-size:22px}
-  .ots.big #otsChart{flex:1;display:flex;align-items:stretch}
-  .ots.big #otsChart svg{height:100%!important}
-  .scrim{position:absolute;inset:0;background:rgba(2,8,18,.72);opacity:0;transition:opacity .35s ease;pointer-events:none}
+  .vig{position:absolute;inset:0;pointer-events:none;background:linear-gradient(to top,rgba(8,8,7,.74) 0,rgba(0,0,0,0) 30%)}
+  .scrim{position:absolute;inset:0;background:rgba(10,10,9,.82);opacity:0;transition:opacity .35s ease;pointer-events:none}
   .scrim.on{opacity:1}
-  .ots h4{margin:0;padding:8px 12px;background:rgba(0,0,0,.28);font-size:11px;letter-spacing:.1em;
-          text-transform:uppercase;color:#bcd7f5;font-family:var(--mono);
-          display:flex;justify-content:space-between;gap:10px}
-  .ots .body{padding:11px 13px 13px}
-  .ots .q{font-size:12.5px;line-height:1.35;color:#eaf3ff;
+
+  /* channel bug */
+  .bug{position:absolute;right:14px;bottom:12px;z-index:6;display:flex;align-items:center;gap:7px;
+       font-size:12px;font-weight:800;letter-spacing:-.04em;
+       background:rgba(13,13,13,.78);border:1px solid rgba(165,159,152,.3);border-radius:3px;padding:5px 10px}
+  .bug .km{color:var(--ink)}.bug .km b{color:var(--acc)}.bug .lv{color:var(--red);font-family:var(--mono);font-size:10px;letter-spacing:.1em}
+  .bug .tm{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10px}
+
+  /* ---------- two-box crossfire ---------- */
+  .twobox{position:absolute;inset:0;z-index:5;display:none;
+          background:
+            radial-gradient(120% 90% at 50% -10%, #24221e 0%, #131211 55%, #060605 100%)}
+  .twobox.on{display:block}
+  .tb-grid{position:absolute;inset:74px 3.5% 3.5% 3.5%;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .tb-box{position:relative;overflow:hidden;border-radius:4px;background:#000;
+          border:1px solid var(--line);transition:box-shadow .3s ease,border-color .3s ease}
+  .tb-box video,.tb-box img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .tb-box img{filter:brightness(.62) saturate(.85)}
+  .tb-box.live img{filter:none}
+  .tb-box.live{border-color:rgba(245,241,232,.5);box-shadow:0 0 0 2px rgba(245,241,232,.22),0 18px 60px rgba(0,0,0,.6)}
+  .tb-box.live.yes{box-shadow:0 0 0 2px var(--up),0 18px 60px rgba(0,0,0,.6)}
+  .tb-box.live.no{box-shadow:0 0 0 2px var(--down),0 18px 60px rgba(0,0,0,.6)}
+  .tb-strap{position:absolute;left:0;bottom:0;right:0;display:flex;align-items:center;gap:10px;
+            padding:8px 12px;background:linear-gradient(90deg,rgba(13,13,13,.94),rgba(13,13,13,.72))}
+  .tb-strap .who{font-size:16px;font-weight:900;letter-spacing:.04em}
+  .tb-strap .pos{font-family:var(--mono);font-size:11px;font-weight:800;padding:3px 8px;border-radius:2px}
+  .tb-strap .pos.yes{background:rgba(213,255,82,.14);color:var(--up);border:1px solid rgba(213,255,82,.5)}
+  .tb-strap .pos.no{background:rgba(255,121,103,.12);color:var(--down);border:1px solid rgba(255,121,103,.5)}
+  .tb-mic{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--muted);opacity:0;transition:opacity .3s}
+  .tb-box.live .tb-mic{opacity:1}
+  .tb-top{position:absolute;left:3.5%;right:3.5%;top:14px;height:48px;display:flex;align-items:stretch;gap:0;
+          box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  .tb-flag{display:flex;align-items:center;padding:0 16px;background:var(--acc);color:var(--accInk);font-weight:900;
+           font-size:15px;letter-spacing:.14em}
+  .tb-q{flex:1;display:flex;align-items:center;padding:0 16px;background:var(--panel);border:1px solid var(--line);border-left:0;
+        font-size:14.5px;font-weight:700;line-height:1.2;overflow:hidden}
+  .tb-q span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .tb-price{display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--panel2);font-family:var(--mono);
+            font-weight:800;font-size:18px;border:1px solid var(--line);border-left:0}
+
+  /* ---------- headline rail (show open) ---------- */
+  .rail{position:absolute;top:0;right:0;bottom:0;width:31%;z-index:4;display:none;flex-direction:column;gap:12px;
+        background:linear-gradient(180deg,#131211,#0a0a09);border-left:1px solid var(--line);padding:18px 16px;
+        overflow:hidden}
+  .rail.on{display:flex}
+  .rail h5{margin:0;padding:9px 14px;background:var(--acc);color:var(--accInk);font-size:12px;font-weight:900;letter-spacing:.22em;
+           text-transform:uppercase;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  .rail .card{background:linear-gradient(170deg,rgba(23,22,21,.97),rgba(13,13,13,.97));
+              border:1px solid var(--line);border-left:4px solid var(--acc);padding:10px 14px;
+              box-shadow:0 14px 40px rgba(0,0,0,.55);animation:railin .5s ease-out both}
+  .rail .card:nth-child(3){animation-delay:.12s}.rail .card:nth-child(4){animation-delay:.24s}
+  @keyframes railin{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:none}}
+  .rail .card .sym{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.12em}
+  .rail .card .rq{font-size:14.5px;font-weight:700;line-height:1.3;margin:4px 0 6px;
+                  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .rail .card .rp{font-family:var(--mono);font-size:17px;font-weight:800;display:flex;gap:10px;align-items:baseline}
+
+  /* ---------- over-the-shoulder / full-frame graphic ---------- */
+  .ots{position:absolute;top:3.2%;right:3%;width:40%;max-width:520px;z-index:4;
+       background:linear-gradient(170deg,rgba(23,22,21,.97),rgba(13,13,13,.98));
+       border:1px solid var(--line);border-radius:3px;box-shadow:0 18px 50px rgba(0,0,0,.65);
+       overflow:hidden;transition:opacity .35s ease,transform .35s ease}
+  .ots.big{top:5%;right:4%;left:4%;bottom:6%;width:auto;max-width:none;display:flex;flex-direction:column}
+  .ots.big .body{flex:1;display:flex;flex-direction:column}
+  .ots.big .q{font-size:20px;-webkit-line-clamp:2;min-height:auto;margin-bottom:6px}
+  .ots.big .big2{font-size:72px}
+  .ots.big .chg{font-size:24px}
+  .ots.big #otsChart{flex:1;min-height:0}
+  .ots.hidden2{opacity:0;pointer-events:none}
+  .ots h4{margin:0;padding:9px 13px;background:rgba(0,0,0,.32);font-size:11px;letter-spacing:.1em;
+          text-transform:uppercase;color:var(--muted);font-family:var(--mono);
+          display:flex;justify-content:space-between;gap:10px;border-bottom:2px solid var(--acc)}
+  .ots .body{padding:12px 14px 14px}
+  .ots .q{font-size:13px;line-height:1.35;color:var(--ink);
           display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.7em}
   .ots .figs{display:flex;align-items:baseline;gap:12px;margin:7px 0 6px}
-  .ots .big2{font-family:var(--mono);font-size:38px;font-weight:700;line-height:1}
+  .ots .big2{font-family:var(--mono);font-size:40px;font-weight:800;line-height:1}
   .ots .chg{font-family:var(--mono);font-size:15px;font-weight:700}
 
+  /* ---------- full board ---------- */
+  .fullboard{position:absolute;inset:5% 4% 6% 4%;z-index:4;display:none;flex-direction:column;gap:12px}
+  .fullboard.on{display:flex}
+  .fb-head{display:flex;align-items:center;gap:14px}
+  .fb-head .flag{background:var(--acc);color:var(--accInk);font-weight:900;letter-spacing:.18em;font-size:13px;padding:9px 16px}
+  .fb-head .sub{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase}
+  .fb-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;align-content:stretch}
+  .fb-card{background:linear-gradient(170deg,rgba(23,22,21,.96),rgba(13,13,13,.98));border:1px solid var(--line);
+           border-radius:3px;padding:12px 14px;display:flex;flex-direction:column;box-shadow:0 14px 40px rgba(0,0,0,.5);
+           animation:railin .4s ease-out both;cursor:pointer;transition:border-color .15s ease}
+  .fb-card:hover{border-color:var(--acc)}
+  .trade-chip{font-family:var(--mono);font-size:9.5px;font-weight:800;letter-spacing:.1em;color:var(--accInk);
+              background:var(--acc);border-radius:2px;padding:2px 6px}
+  .fb-card .sym{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.12em;display:flex;justify-content:space-between}
+  .fb-card .fq{font-size:14px;font-weight:700;line-height:1.3;margin:5px 0 7px;
+               display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.6em}
+  .fb-card .fp{display:flex;align-items:baseline;gap:10px;font-family:var(--mono)}
+  .fb-card .fp b{font-size:26px;font-weight:800}
+  .fb-card .spark{margin-top:6px}
+
   /* ---------- lower third ---------- */
-  .lower{display:flex;align-items:stretch;height:66px;background:#02101f}
-  .badge{display:flex;align-items:center;padding:0 16px;background:var(--red);font-size:15px;font-weight:800;
-         letter-spacing:.02em;white-space:nowrap}
-  .badge span{font-weight:400;margin-left:7px;opacity:.92}
-  .headline{flex:1;display:flex;align-items:center;padding:0 18px;background:linear-gradient(90deg,#0b4da2,#083b7d);
-            font-size:19px;font-weight:600;line-height:1.18;overflow:hidden}
-  .statblk{display:flex;flex-direction:column;justify-content:center;padding:0 16px;min-width:200px;
-           background:#02101f;border-left:1px solid #113054;font-family:var(--mono)}
-  .statblk .nm{font-size:10px;color:#9fc0e8;letter-spacing:.08em}
-  .statblk .vv{font-size:24px;font-weight:700;line-height:1.1}
+  .lower{display:flex;align-items:stretch;height:72px;background:var(--ground);border-top:1px solid var(--line)}
+  .badge{display:flex;flex-direction:column;justify-content:center;padding:0 18px;background:var(--acc);color:var(--accInk);
+         white-space:nowrap;min-width:150px;max-width:38%}
+  .badge .k1{font-size:16px;font-weight:900;letter-spacing:.03em;overflow:hidden;text-overflow:ellipsis}
+  .badge .k2{font-family:var(--mono);font-size:9.5px;letter-spacing:.24em;opacity:.7;margin-top:2px}
+  .headline{flex:1;display:flex;align-items:center;padding:0 20px;background:var(--panel);
+            font-size:20px;font-weight:700;line-height:1.2;overflow:hidden;color:var(--ink)}
+  .headline span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .headline.long{font-size:15.5px}
+  .statblk{display:flex;flex-direction:column;justify-content:center;padding:0 18px;min-width:210px;
+           background:var(--ground);border-left:1px solid var(--line);font-family:var(--mono)}
+  .statblk .nm{font-size:10px;color:var(--muted);letter-spacing:.08em}
+  .statblk .vv{font-size:25px;font-weight:800;line-height:1.1}
   .statblk .dd{font-size:12px;font-weight:700}
 
   /* ---------- ticker rows ---------- */
-  .row{height:29px;overflow:hidden;white-space:nowrap;position:relative;border-top:1px solid #071223}
-  .row.a{background:#0a1930}.row.b{background:#071426}
-  .rowscroll{display:inline-block;padding-left:100%;line-height:29px;font-family:var(--mono);font-size:12.5px;font-weight:700}
-  .row.a .rowscroll{animation:sc 44s linear infinite}
-  .row.b .rowscroll{animation:sc 58s linear infinite}
+  .row{height:30px;overflow:hidden;white-space:nowrap;position:relative;border-top:1px solid var(--line)}
+  .row.a{background:var(--ground)}.row.b{background:#131211}
+  .rowscroll{display:inline-block;padding-left:100%;line-height:30px;font-family:var(--mono);font-size:12.5px;font-weight:700}
+  .row.a .rowscroll{animation:sc 95s linear infinite}
+  .row.b .rowscroll{animation:sc 120s linear infinite}
   .titem{display:inline-block;margin-right:34px}
-  .titem .sym{color:#9fc0e8;margin-right:8px;font-weight:600}
-  .up{color:var(--up)}.down{color:var(--down)}.flat{color:#9fc0e8}
-  /* segment sting */
-  .sting{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-         gap:14px;background:linear-gradient(140deg,#07142a,#020913);z-index:8;opacity:0;pointer-events:none;
-         transition:opacity .22s ease}
-  .sting.on{opacity:1}
-  .sting .bar{width:84px;height:4px;background:var(--red);animation:grow .5s ease-out}
-  @keyframes grow{from{width:0}to{width:84px}}
-  .sting .nm{font-size:46px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
-             animation:rise .45s ease-out}
-  .sting .sub{font-family:var(--mono);font-size:11px;letter-spacing:.34em;color:#8fb4de;text-transform:uppercase}
-  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .titem .sym{color:var(--muted);margin-right:8px;font-weight:600}
+  .up{color:var(--up)}.down{color:var(--down)}.flat{color:var(--muted)}
 
-  /* breaking */
+  /* ---------- segment sting ---------- */
+  .sting{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+         gap:16px;z-index:8;opacity:0;pointer-events:none;transition:opacity .22s ease;
+         background:
+           radial-gradient(110% 80% at 50% 0%, #24221e 0%, #131211 55%, #060605 100%)}
+  .sting.on{opacity:1}
+  .sting::before{content:"";position:absolute;inset:0;opacity:.12;
+    background:repeating-linear-gradient(115deg,transparent 0 46px,rgba(165,159,152,.5) 46px 47px)}
+  .sting .bar{width:96px;height:5px;background:var(--acc);animation:grow .5s ease-out}
+  @keyframes grow{from{width:0}to{width:96px}}
+  .sting .nm{font-size:54px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;
+             animation:rise .45s ease-out;text-shadow:0 4px 30px rgba(0,0,0,.7)}
+  .sting .sub{font-family:var(--mono);font-size:12px;letter-spacing:.4em;color:var(--muted);text-transform:uppercase}
+  @keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+
+  /* ---------- breaking ---------- */
   .brk{position:absolute;left:0;right:0;top:0;bottom:0;z-index:7;pointer-events:none;opacity:0;transition:opacity .25s}
   .brk.on{opacity:1}
   .brk .flash{position:absolute;inset:0;background:rgba(200,16,46,.16);animation:pulse 1.1s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:.25}50%{opacity:.7}}
-  .brk .band{position:absolute;left:0;right:0;top:38%;background:var(--red);padding:14px 26px;
+  .brk .band{position:absolute;left:0;right:0;top:36%;background:var(--red);padding:16px 28px;
              box-shadow:0 14px 44px rgba(0,0,0,.6)}
-  .brk .band .t{font-size:12px;letter-spacing:.34em;font-weight:800}
-  .brk .band .l{font-size:23px;font-weight:700;line-height:1.25;margin-top:6px}
-  .brk .mv{position:absolute;left:0;right:0;top:calc(38% + 104px);display:flex;justify-content:center;gap:14px;
-           font-family:var(--mono);font-size:30px;font-weight:800}
+  .brk .band .t{font-size:13px;letter-spacing:.38em;font-weight:900}
+  .brk .band .l{font-size:24px;font-weight:700;line-height:1.25;margin-top:7px}
+  .brk .mv{position:absolute;left:0;right:0;top:calc(36% + 118px);display:flex;justify-content:center;gap:16px;
+           font-family:var(--mono);font-size:32px;font-weight:800;text-shadow:0 2px 12px rgba(0,0,0,.8)}
 
   /* origin quote card */
-  .quote{font-size:19px;line-height:1.45;color:#eaf3ff;border-left:3px solid var(--red);padding-left:14px;margin:6px 0 10px}
-  .quote .by{display:block;margin-top:8px;font-family:var(--mono);font-size:12px;color:#9fc0e8}
+  .quote{font-size:20px;line-height:1.45;color:var(--ink);border-left:3px solid var(--acc);padding-left:15px;margin:6px 0 10px}
+  .quote .by{display:block;margin-top:9px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .bigline{font-size:30px;font-weight:800;line-height:1.32;padding:8px 0 12px}
+
   /* Browsers refuse unmuted autoplay without a user gesture. Rather than
      silently muting (which looked like the clips had no audio at all), ask. */
   .unmute{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;
-          justify-content:center;gap:16px;background:rgba(2,8,18,.9);cursor:pointer}
-  .unmute .ico{width:74px;height:74px;border-radius:50%;background:var(--red);display:flex;
-               align-items:center;justify-content:center;font-size:30px}
-  .unmute .t{font-size:17px;font-weight:700;letter-spacing:.04em}
-  .unmute .s{font-family:var(--mono);font-size:11px;color:#9fc0e8;letter-spacing:.16em;text-transform:uppercase}
+          justify-content:center;gap:16px;background:rgba(8,8,7,.92);cursor:pointer}
+  .unmute .ico{width:78px;height:78px;border-radius:50%;background:var(--acc);color:var(--accInk);display:flex;
+               align-items:center;justify-content:center;font-size:32px}
+  .unmute .t{font-size:18px;font-weight:800;letter-spacing:.04em}
+  .unmute .s{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.16em;text-transform:uppercase}
   .hidden{display:none!important}
 </style>
 </head>
@@ -128,31 +229,59 @@
 <div class="tv">
 
   <div class="strip">
+    <div class="brandbox">thread<b>line</b></div>
     <div class="livebox"><i></i>LIVE</div>
     <div class="stripwrap"><div class="stripscroll" id="strip"></div></div>
-    <div class="clock" id="clock"></div>
+    <div class="clock"><span id="clock"></span><span class="tz">LOCAL</span></div>
   </div>
 
   <div class="shot">
-    <img id="poster" src="/live/assets/champions/anchor.jpg" alt="" />
+    <img id="poster" src="/live/assets/champions/desk.jpg" alt="" />
     <video id="idle" autoplay muted loop playsinline></video>
     <video id="talk" autoplay playsinline></video>
     <div class="vig"></div>
     <div class="scrim" id="scrim"></div>
+
+    <div class="twobox" id="twobox">
+      <div class="tb-top">
+        <div class="tb-flag">CROSSFIRE</div>
+        <div class="tb-q" id="tbQ"></div>
+        <div class="tb-price" id="tbPrice"></div>
+      </div>
+      <div class="tb-grid">
+        <div class="tb-box yes" id="tbLeft">
+          <img src="/live/assets/champions/affirmative.jpg" alt="" />
+          <video id="tbLeftVid" playsinline></video>
+          <div class="tb-strap"><span class="who">MAYA REYES</span><span class="pos yes">YES</span><span class="tb-mic">● ON MIC</span></div>
+        </div>
+        <div class="tb-box no" id="tbRight">
+          <img src="/live/assets/champions/negative.jpg" alt="" />
+          <video id="tbRightVid" playsinline></video>
+          <div class="tb-strap"><span class="who">GRANT ELLISON</span><span class="pos no">NO</span><span class="tb-mic">● ON MIC</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rail" id="rail"></div>
+
+    <div class="fullboard" id="fullboard"></div>
+
     <div class="brk" id="brk">
       <div class="flash"></div>
-      <div class="band"><div class="t">BREAKING</div><div class="l" id="brkLine"></div></div>
+      <div class="band"><div class="t">BREAKING NEWS</div><div class="l" id="brkLine"></div></div>
       <div class="mv" id="brkMove"></div>
     </div>
+
     <div class="unmute" id="unmute">
       <div class="ico">🔊</div>
       <div class="t">Click for sound</div>
       <div class="s">Browsers block autoplay audio until you interact</div>
     </div>
+
     <div class="sting" id="sting">
       <div class="bar"></div>
       <div class="nm" id="stingNm"></div>
-      <div class="sub">Karma Markets</div>
+      <div class="sub">Threadline Live</div>
     </div>
 
     <div class="ots" id="ots">
@@ -163,11 +292,13 @@
         <div id="otsChart"></div>
       </div>
     </div>
+
+    <div class="bug"><span class="km">thread<b>line</b></span><span class="lv">●&nbsp;LIVE</span><span class="tm" id="bugClock"></span><span class="tm" id="bugWatch"></span></div>
   </div>
 
   <div class="lower">
-    <div class="badge" id="badge">MARKETS<span id="badgeSub"></span></div>
-    <div class="headline" id="headline">Karma Markets is live.</div>
+    <div class="badge"><div class="k1" id="badge">MARKETS</div><div class="k2">THREADLINE LIVE</div></div>
+    <div class="headline" id="headline">Threadline is live.</div>
     <div class="statblk">
       <div class="nm" id="statNm">BOOK</div>
       <div class="vv" id="statVv">—</div>
@@ -183,78 +314,293 @@
 const $=(id)=>document.getElementById(id);
 const pct=(p)=>(p*100).toFixed(1);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString('en-US',{hour12:false})},1000);
+const PROGRAM=new URLSearchParams(location.search).has('program');
+setInterval(()=>{
+  const t=new Date().toLocaleTimeString('en-US',{hour12:false});
+  $('clock').textContent=t; $('bugClock').textContent=t.slice(0,5);
+},1000);
 
-/** Ticker symbol from the contract id — KM01, KM02… reads like an instrument. */
-const sym=(id)=>'KM'+String(id).replace(/\D/g,'').padStart(2,'0');
-const arrow=(d)=>d===undefined||d===null?'':(d>=0?'▲':'▼');
-const cls=(d)=>d===undefined||d===null?'flat':(d>=0?'up':'down');
+/** Ticker symbol from the contract id — TL04, TL17… reads like an instrument.
+ *  Ids can be arbitrarily long, so hash down to two digits; the mapping is
+ *  deterministic so every viewer prints the same symbol for the same book. */
+const sym=(id)=>{
+  const s=String(id); let h=0;
+  for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return 'TL'+String(h%100).padStart(2,'0');
+};
+/* A move that rounds to 0.0 is not a move — print it flat, not with an arrow
+ * pointing at nothing. */
+const flatish=(d)=>d===undefined||d===null||Math.abs(d)<0.0005;
+const arrow=(d)=>flatish(d)?'':(d>=0?'▲':'▼');
+const cls=(d)=>flatish(d)?'flat':(d>=0?'up':'down');
 
-/** `dir` keeps the chart's colour in agreement with the printed change. Colouring
- *  by first-vs-last across the whole series contradicts a readout measured since
- *  the last bulletin — a green up-arrow over a red chart reads as a bug. */
-function chart(hist,w,h,strong,dir){
-  const pts=(hist&&hist.length>1)?hist:[0.5,0.5];
-  const n=pts.length,pad=3;
-  const lo=Math.min(...pts),hi=Math.max(...pts);
-  const mid=(lo+hi)/2,span=Math.max(hi-lo,0.06)*1.35;
-  const top=Math.min(1,mid+span/2),bot=Math.max(0,mid-span/2);
-  const X=i=>pad+(i/(n-1))*(w-pad*2);
-  const Y=p=>h-pad-((p-bot)/((top-bot)||1))*(h-pad*2);
-  const line=pts.map((p,i)=>`${X(i).toFixed(1)},${Y(p).toFixed(1)}`).join(' ');
-  const rising=(dir===undefined||dir===null)?(pts[n-1]>=pts[0]):(dir>=0);
-  const col=rising?'var(--up)':'var(--down)';
-  const id='g'+Math.random().toString(36).slice(2,8);
-  // Column ghosts behind the line, like a broadcast chart.
-  const bars=pts.map((p,i)=>{
-    const bw=Math.max(2,(w-pad*2)/n-2);
-    return `<rect x="${(X(i)-bw/2).toFixed(1)}" y="${Y(p).toFixed(1)}" width="${bw.toFixed(1)}"
-      height="${Math.max(0,h-pad-Y(p)).toFixed(1)}" fill="${col}" opacity="0.13"/>`;
-  }).join('');
-  return `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;height:${h}px">
-    <defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">
-      <stop offset="0%" stop-color="${col}" stop-opacity="0.3"/>
-      <stop offset="100%" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
-    ${bars}
-    ${(0.5>=bot&&0.5<=top)?`<line x1="0" y1="${Y(0.5).toFixed(1)}" x2="${w}" y2="${Y(0.5).toFixed(1)}" stroke="#2a5fa8" stroke-dasharray="4 4"/>`:''}
-    <polygon points="${X(0)},${h-pad} ${line} ${X(n-1)},${h-pad}" fill="url(#${id})"/>
-    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="${strong?2.4:1.6}" stroke-linejoin="round"/>
-    <circle cx="${X(n-1)}" cy="${Y(pts[n-1])}" r="${strong?4:2.6}" fill="${col}"/></svg>`;
+/* ------------------------------------------------------------ shared clock */
+/** serverNow - clientNow. Every payload refreshes it, so `at` timestamps can
+ *  be turned into a live position and every screen shows the same instant —
+ *  a viewer joining mid-beat lands mid-beat, like turning on a TV. */
+let clockSkew=0;
+const livePos=(at)=>Math.max(0,(Date.now()+clockSkew-at)/1000);
+
+/** Seek media to the shared-timeline position once metadata is available. */
+function syncTo(el,at){
+  const apply=()=>{
+    const pos=livePos(at);
+    if(pos>0.35&&(!el.duration||pos<el.duration-0.2)){ try{el.currentTime=pos;}catch{} }
+  };
+  if(el.readyState>=1) apply();
+  else el.addEventListener('loadedmetadata',apply,{once:true});
 }
 
-let markets=[], traders=[], idleReady=false, focusId=null;
+/* ---------------------------------------------------------------- preload */
+/** Blob-cache media as soon as the control room says it exists, so air time
+ *  never starts a download. Everything is same-origin (clips are localised
+ *  server-side), so fetch always works. */
+const blobs=new Map();
+async function prefetch(url){
+  if(!url||blobs.has(url))return;
+  blobs.set(url,null);
+  try{
+    const r=await fetch(url); if(!r.ok)throw 0;
+    blobs.set(url,URL.createObjectURL(await r.blob()));
+    if(blobs.size>12){
+      const k=blobs.keys().next().value, v=blobs.get(k);
+      if(v)URL.revokeObjectURL(v);
+      blobs.delete(k);
+    }
+  }catch{blobs.delete(url);}
+}
+const srcOf=(url)=>blobs.get(url)||url;
 
-let soundOn=false;
+/* ------------------------------------------------------------------ sound */
+let soundOn=PROGRAM;
 const audio=new Audio();
+let AC;
+const ac=()=>{ if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)(); return AC; };
+function tone(freq,at,dur,type,gain,glideTo){
+  const c=ac(),o=c.createOscillator(),g=c.createGain(),t0=c.currentTime+at;
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq,t0);
+  if(glideTo)o.frequency.exponentialRampToValueAtTime(glideTo,t0+dur);
+  g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(gain||.1,t0+.02);
+  g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+  o.connect(g).connect(c.destination); o.start(t0); o.stop(t0+dur+.05);
+}
+/** Broadcast sting: a low impact under a rising three-note motif. */
+function stingSound(){ if(!soundOn)return;
+  tone(587.33,0,.1,'triangle',.09); tone(880,.1,.1,'triangle',.09);
+  tone(1174.66,.2,.5,'triangle',.11); tone(98,0,.6,'sine',.22,49);
+}
+/** Breaking: two urgent low pulses. */
+function breakSound(){ if(!soundOn)return;
+  tone(233,0,.16,'sawtooth',.07); tone(233,.24,.16,'sawtooth',.07); tone(311,.48,.4,'sawtooth',.06);
+}
+
+/* Level-match the two audio lanes: Grok clip audio measures ≈ -12 LUFS while
+   voiceovers are normalised server-side to ≈ -16. Clips ride a fixed trim
+   down to the same bed, and everything passes one gentle master compressor
+   so a beat handoff never lurches in volume. */
+const CLIP_GAIN=0.62;
+let busReady=false;
+function routeAudio(){
+  if(busReady||!soundOn) return;
+  try{
+    const c=ac();
+    const comp=c.createDynamicsCompressor();
+    comp.threshold.value=-18; comp.knee.value=15; comp.ratio.value=3; comp.attack.value=.01; comp.release.value=.25;
+    comp.connect(c.destination);
+    const hook=(el,g)=>{ const s=c.createMediaElementSource(el); const gn=c.createGain(); gn.gain.value=g; s.connect(gn); gn.connect(comp); };
+    hook($('talk'),CLIP_GAIN); hook($('tbLeftVid'),CLIP_GAIN); hook($('tbRightVid'),CLIP_GAIN); hook(audio,1);
+    busReady=true;
+  }catch{ /* graph is polish, not a dependency — plain playback still works */ }
+}
 
 $('unmute').addEventListener('click',()=>{
   soundOn=true;
   $('unmute').classList.add('hidden');
-  const t=$('talk');
-  t.muted=false;
-  // Unlock the element by playing it once inside the gesture.
-  t.play().catch(()=>{});
-  audio.muted=false;
-  audio.play().catch(()=>{});
+  ac().resume().catch(()=>{});
+  routeAudio();
+  for(const el of [$('talk'),$('tbLeftVid'),$('tbRightVid')]){ el.muted=false; }
+  // Unlock the elements by playing inside the gesture.
+  $('talk').play().catch(()=>{});
+  audio.muted=false; audio.play().catch(()=>{});
 });
+if(PROGRAM){ $('unmute').classList.add('hidden'); }
 
-function toIdle(){ if(idleReady) $('idle').classList.add('on'); $('talk').classList.remove('on'); }
+/* ------------------------------------------------------------------ chart */
+/**
+ * Broadcast intraday chart. Drawn at TRUE pixel size — never stretched — so
+ * strokes stay broadcast-thin at any scale. Gridlines with printed levels and
+ * a last-price chip on the right edge, the way a markets channel draws odds.
+ * `dir` keeps the chart's colour in agreement with the printed change.
+ */
+function chart(hist,w,h,strong,dir,axis){
+  const pts=(hist&&hist.length>1)?hist:[0.5,0.5];
+  const n=pts.length;
+  const padL=8,padT=10,padB=8,padR=axis?56:8;
+  const lo=Math.min(...pts),hi=Math.max(...pts);
+  const mid=(lo+hi)/2,span=Math.max(hi-lo,0.12)*1.3;
+  const top=Math.min(1,mid+span/2),bot=Math.max(0,mid-span/2);
+  const X=i=>padL+(i/(n-1))*(w-padL-padR);
+  const Y=p=>padT+(1-(p-bot)/((top-bot)||1))*(h-padT-padB);
+  const line=pts.map((p,i)=>`${X(i).toFixed(1)},${Y(p).toFixed(1)}`).join(' ');
+  const rising=(dir===undefined||dir===null)?(pts[n-1]>=pts[0]):(dir>=0);
+  const col=rising?'var(--up)':'var(--down)';
+  const id='g'+Math.random().toString(36).slice(2,8);
+  const last=pts[n-1];
 
-function toTalk(url){
+  // Gridlines at round probability levels inside the visible window.
+  let grid='';
+  if(axis){
+    for(let lv=0.1;lv<1;lv+=0.1){
+      if(lv<bot||lv>top) continue;
+      const y=Y(lv).toFixed(1);
+      const major=Math.round(lv*100)%25===0;
+      grid+=`<line x1="${padL}" y1="${y}" x2="${w-padR+6}" y2="${y}" stroke="#3a3835" stroke-opacity="${major?0.55:0.22}" ${major?'':'stroke-dasharray="2 5"'}/>`+
+            (major?`<text x="${w-padR+10}" y="${+y+4}" fill="#8a847d" font-size="11" font-family="ui-monospace,Menlo,monospace">${Math.round(lv*100)}</text>`:'');
+    }
+  } else if(0.5>=bot&&0.5<=top){
+    grid=`<line x1="0" y1="${Y(0.5).toFixed(1)}" x2="${w}" y2="${Y(0.5).toFixed(1)}" stroke="#3a3835" stroke-dasharray="4 4"/>`;
+  }
+
+  // Last-price chip pinned to the right edge.
+  const chip=axis?`<g>
+      <line x1="${X(n-1)}" y1="${Y(last).toFixed(1)}" x2="${w-padR+6}" y2="${Y(last).toFixed(1)}" stroke="${col}" stroke-dasharray="3 3" stroke-opacity=".7"/>
+      <rect x="${w-padR+2}" y="${(Y(last)-11).toFixed(1)}" width="${padR-6}" height="22" rx="2" fill="${col}"/>
+      <text x="${w-padR+2+(padR-6)/2}" y="${(Y(last)+4).toFixed(1)}" fill="#131311" font-size="12" font-weight="700" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">${(last*100).toFixed(1)}</text>
+    </g>`:'';
+
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
+    <defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="${col}" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+    ${grid}
+    <polygon points="${X(0).toFixed(1)},${(h-padB).toFixed(1)} ${line} ${X(n-1).toFixed(1)},${(h-padB).toFixed(1)}" fill="url(#${id})"/>
+    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="${strong?2.2:1.6}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+    <circle cx="${X(n-1).toFixed(1)}" cy="${Y(last).toFixed(1)}" r="${strong?3.5:2.6}" fill="${col}"/>
+    ${chip}</svg>`;
+}
+
+/** Render a chart into a container at its real on-screen size. */
+function chartInto(el,hist,strong,dir,axis,minH){
+  const w=Math.max(el.clientWidth,120);
+  const h=Math.max(el.clientHeight,minH||96);
+  el.innerHTML=chart(hist,w,h,strong,dir,axis);
+}
+
+let markets=[], traders=[], idleReady=false, focusId=null;
+
+/* ------------------------------------------------------------------ stage */
+function hideOverlays(){
+  $('twobox').classList.remove('on');
+  $('rail').classList.remove('on');
+  document.querySelector('.shot').classList.remove('squeeze');
+  $('fullboard').classList.remove('on');
+  $('ots').classList.remove('hidden2');
+  for(const v of [$('tbLeftVid'),$('tbRightVid')]){ v.pause(); v.removeAttribute('src'); v.load(); v.style.opacity=0; }
+  $('tbLeft').classList.remove('live'); $('tbRight').classList.remove('live');
+}
+
+function toIdle(){
   const t=$('talk');
-  t.src=url;
+  t.loop=false; if(!t.paused) t.pause();   // stop a looping package from spinning offstage
+  if(idleReady) $('idle').classList.add('on');
+  t.classList.remove('on');
+}
+
+function toTalk(url,at,opts){
+  const o=opts||{};
+  const t=$('talk');
+  t.src=srcOf(url);
+  t.loop=!!o.loop;
   // Muted until the viewer has clicked — an unmuted play() is simply rejected
-  // before then, which would drop the beat entirely.
-  t.muted=!soundOn;
+  // before then, which would drop the beat entirely. Packages force mute:
+  // the reporter's voice track carries the audio, the b-roll is pictures.
+  t.muted=o.forceMute?true:!soundOn;
+  syncTo(t,at);
   t.onplaying=()=>{ t.classList.add('on'); $('idle').classList.remove('on'); $('poster').classList.add('off'); };
-  t.onended=toIdle;
+  t.onended=o.loop?null:toIdle;
   t.play().catch(()=>{ t.muted=true; t.play().catch(()=>{}); });
 }
 
-function playVO(path){
-  if(!soundOn) return;          // nothing to show for a silent VO beat
-  audio.src=path;
+function playVO(path,at){
+  if(!soundOn) return;          // nothing to hear for a silent VO beat
+  audio.src=srcOf(path);
+  if(at)syncTo(audio,at);
   audio.play().catch(()=>{});
+}
+
+/* ------------------------------------------------------- crossfire two-box */
+function renderTwobox(s){
+  const m=markets.find(x=>x.id===s.marketId)||markets.find(x=>x.id===focusId)||markets[0];
+  $('twobox').classList.add('on');
+  $('ots').classList.add('hidden2');
+  $('rail').classList.remove('on'); $('fullboard').classList.remove('on');
+  $('scrim').classList.remove('on');
+  $('poster').classList.add('off');
+  $('idle').classList.remove('on'); $('talk').classList.remove('on');
+  if(m){
+    $('tbQ').innerHTML=`<span>${esc(m.question)}</span>`;
+    $('tbPrice').innerHTML=`<span>${pct(m.price)}</span><span class="${cls(m.delta)}" style="font-size:13px">${arrow(m.delta)}${m.delta?Math.abs(m.delta*100).toFixed(1):''}</span>`;
+  }
+  const left=s.speaker==='bull';
+  const liveBox=left?$('tbLeft'):$('tbRight');
+  const idleBox=left?$('tbRight'):$('tbLeft');
+  const liveVid=left?$('tbLeftVid'):$('tbRightVid');
+  const idleVid=left?$('tbRightVid'):$('tbLeftVid');
+  idleBox.classList.remove('live');
+  liveBox.classList.add('live');
+  // The listener holds their last frame if they have one; otherwise their
+  // portrait sits under the video and shows through.
+  idleVid.pause();
+  liveVid.muted=!soundOn;
+  liveVid.src=srcOf(s.videoUrl);
+  liveVid.style.opacity=1;
+  syncTo(liveVid,s.at);
+  liveVid.onended=()=>{}; // hold the last frame; the next beat cuts away
+  liveVid.play().catch(()=>{ liveVid.muted=true; liveVid.play().catch(()=>{}); });
+}
+
+/* ------------------------------------------------------------ headline rail */
+function renderRail(){
+  // The rail rides BESIDE a live camera — never dim the presenter under it,
+  // and never cover them: the picture squeezes left instead.
+  $('scrim').classList.remove('on');
+  document.querySelector('.shot').classList.add('squeeze');
+  const seenQ=new Set();
+  const ranked=[...markets].sort((a,b)=>Math.abs(b.delta??0)-Math.abs(a.delta??0)||((b.volume||0)-(a.volume||0)))
+    .filter(m=>{const k=(m.question||'').slice(0,60);if(seenQ.has(k))return false;seenQ.add(k);return true;}).slice(0,3);
+  $('rail').innerHTML=`<h5>Top of the hour</h5>`+ranked.map(m=>
+    `<div class="card"><div class="sym">${sym(m.id)} · @${esc(m.sourceHandle||'')}</div>
+      <div class="rq">${esc(m.question)}</div>
+      <div class="rp"><span>${pct(m.price)}</span>
+        <span class="${cls(m.delta)}" style="font-size:13px">${arrow(m.delta)} ${m.delta?Math.abs(m.delta*100).toFixed(1):'0.0'}</span></div>
+    </div>`).join('');
+  $('rail').classList.add('on');
+  $('ots').classList.add('hidden2');
+}
+
+/* ------------------------------------------------------------- full board */
+function renderFullboard(){
+  const list=markets.slice(0,6);
+  $('fullboard').innerHTML=`<div class="fb-head"><div class="flag">THE BOARD</div>
+      <div class="sub">Live odds across the book · ${markets.length} contracts</div></div>
+    <div class="fb-grid">`+list.map((m,i)=>
+      `<div class="fb-card" style="animation-delay:${i*0.07}s" onclick="window.open('/markets/${esc(m.id)}','_blank')" title="Open this market">
+        <div class="sym"><span>${sym(m.id)}</span><span style="display:flex;gap:8px;align-items:center">@${esc(m.sourceHandle||'')}<span class="trade-chip">TRADE ↗</span></span></div>
+        <div class="fq">${esc(m.question)}</div>
+        <div class="fp"><b>${pct(m.price)}</b>
+          <span class="${cls(m.delta)}">${arrow(m.delta)} ${m.delta?Math.abs(m.delta*100).toFixed(1):'0.0'}</span></div>
+        <div class="spark" data-i="${i}"></div>
+      </div>`).join('')+`</div>`;
+  $('fullboard').classList.add('on');
+  $('ots').classList.add('hidden2');
+  $('scrim').classList.add('on');
+  // Sparks render after layout so each is drawn at its card's true size.
+  requestAnimationFrame(()=>{
+    document.querySelectorAll('#fullboard .spark').forEach(el=>{
+      const m=list[+el.dataset.i];
+      if(m) chartInto(el,m.history,false,m.delta,false,54);
+    });
+  });
 }
 
 /** Karma segment gets a balances board, not an odds chart — the point of the
@@ -274,10 +620,10 @@ function renderKarma(big){
       const w=Math.max(3,(t.seedCredits/Math.max(...top.map(x=>x.seedCredits),1))*100);
       const burners=Math.ceil(t.seedCredits/100);
       return `<div style="display:grid;grid-template-columns:110px 1fr 110px;gap:10px;align-items:center;font-family:var(--mono);font-size:12px">
-        <div style="color:#9fc0e8">@${esc(t.handle)}</div>
+        <div style="color:var(--muted)">@${esc(t.handle)}</div>
         <div style="background:rgba(255,255,255,.05);height:16px;position:relative;border-radius:2px;overflow:hidden">
-          <div style="position:absolute;inset:0 auto 0 0;width:${w}%;background:linear-gradient(90deg,#0b4da2,#2a8fe8)"></div>
-          <div style="position:absolute;right:6px;top:0;line-height:16px;font-size:10px;color:#cfe3fa">${burners} burners to match</div>
+          <div style="position:absolute;inset:0 auto 0 0;width:${w}%;background:linear-gradient(90deg,rgba(213,255,82,.28),rgba(213,255,82,.75))"></div>
+          <div style="position:absolute;right:6px;top:0;line-height:16px;font-size:10px;color:${w>72?'var(--accInk)':'var(--muted)'};font-weight:700">${burners} burners to match</div>
         </div>
         <div style="text-align:right"><b>${Math.round(t.credits).toLocaleString()}</b>
           <span class="${pl>=0?'up':'down'}">${pl>=0?'+':''}${Math.round(pl)}</span></div>
@@ -296,50 +642,11 @@ function renderOts(big){
   $('otsVal').textContent=pct(m.price);
   const d=m.delta;
   $('otsChg').innerHTML=`<span class="${cls(d)}">${arrow(d)} ${d===undefined||d===null?'0.0':Math.abs(d*100).toFixed(1)}</span>`;
-  $('otsChart').innerHTML=chart(m.history,520,big?300:104,true,m.delta);
+  $('otsChart').style.display='';
+  chartInto($('otsChart'),m.history,true,m.delta,big,big?220:104);
 }
 
-function renderTickers(){
-  const list=markets.length?markets:[{id:'0',question:'awaiting contracts',price:0}];
-  $('strip').innerHTML=list.map(m=>
-    `<span class="sitem"><span class="nm">${sym(m.id)}</span>${pct(m.price)}
-      <span class="${cls(m.delta)}">${arrow(m.delta)}${m.delta?Math.abs(m.delta*100).toFixed(1):''}</span></span>`).join('').repeat(2);
-  $('row1').innerHTML=list.map(m=>
-    `<span class="titem"><span class="sym">${sym(m.id)}</span>${esc((m.question||'').slice(0,58))}
-      <b>${pct(m.price)}</b> <span class="${cls(m.delta)}">${arrow(m.delta)}</span></span>`).join('').repeat(2);
-  $('row2').innerHTML=list.map(m=>
-    `<span class="titem"><span class="sym">${sym(m.id)}</span>VOL ${(m.volume||0).toLocaleString()}
-      · ${m.tradeCount||0} TRD · @${esc(m.sourceHandle||'')}</span>`).join('').repeat(2);
-
-  const tot=markets.reduce((s,m)=>s+(m.volume||0),0);
-  $('statNm').textContent='BOOK VOLUME';
-  $('statVv').textContent=tot.toLocaleString();
-  $('statDd').innerHTML=`<span class="flat">${markets.length} contracts</span>`;
-}
-
-function setLower(kicker,text,quiet){
-  $('badge').textContent=(kicker||'MARKETS').toUpperCase();
-  $('headline').textContent=text;
-  $('headline').style.opacity=quiet?.72:1;
-}
-
-function showSting(name){
-  $('stingNm').textContent=name;
-  const el=$('sting'); el.classList.add('on');
-  setTimeout(()=>el.classList.remove('on'),1700);
-}
-
-function showBreaking(s){
-  $('brkLine').textContent=s.line;
-  const up=s.to>s.from;
-  $('brkMove').innerHTML=`<span class="${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs((s.to-s.from)*100).toFixed(0)} pts</span>
-    <span class="flat">${(s.from*100).toFixed(1)} → ${(s.to*100).toFixed(1)}</span>`;
-  $('brk').classList.add('on');
-  if(s.audioPath){ playVO(s.audioPath); setTimeout(()=>$('brk').classList.remove('on'),(s.seconds||5)*1000+600); }
-}
-
-/** The origin segment shows the post itself — a quote card, not a price line.
- *  Visual variety is what stops a rotation reading as one long ramble. */
+/** The origin segment shows the post itself — a quote card, not a price line. */
 function renderOrigin(big){
   const m=markets.find(x=>x.id===focusId)||markets[0];
   $('ots').classList.toggle('big',!!big);
@@ -351,24 +658,157 @@ function renderOrigin(big){
   $('otsVal').textContent=pct(m.price);
   const d=m.delta;
   $('otsChg').innerHTML=`<span class="${cls(d)}">${arrow(d)} ${d===undefined||d===null?'0.0':Math.abs(d*100).toFixed(1)}</span>`;
-  $('otsChart').innerHTML=m.sourceClaim
-    ? `<div class="quote">“${esc(m.sourceClaim)}”<span class="by">— @${esc(m.sourceHandle)}, now a tradeable instrument</span></div>`
-    : chart(m.history,520,big?300:104,true,m.delta);
+  if(m.sourceClaim){
+    // Big mode pairs the post with how the crowd has priced it since — the
+    // quote alone left half the frame empty.
+    $('otsChart').innerHTML=`<div class="quote">“${esc(m.sourceClaim)}”<span class="by">— @${esc(m.sourceHandle)}, now a tradeable instrument</span></div>`
+      +(big?`<div id="quoteChart" style="flex:1;min-height:120px;margin-top:10px"></div>`:'');
+    if(big){
+      $('otsChart').style.display='flex';$('otsChart').style.flexDirection='column';
+      requestAnimationFrame(()=>{const qc=document.getElementById('quoteChart'); if(qc) chartInto(qc,m.history,true,m.delta,true,160);});
+    }
+  } else {
+    $('otsChart').style.display='';
+    chartInto($('otsChart'),m.history,true,m.delta,big,big?220:104);
+  }
+}
+
+/** Live wire card — real posts or reporting pulled seconds ago, on screen
+ *  while the anchor reads them. The receipts ARE the segment. */
+function renderWire(s){
+  const m=markets.find(x=>x.id===s.marketId)||markets[0];
+  const social=s.segment==='the_room';
+  $('ots').classList.add('big');
+  $('scrim').classList.add('on');
+  $('otsId').textContent=social?'THE ROOM — LIVE FROM X':'REALITY CHECK — FRESH REPORTING';
+  $('otsSrc').textContent=social?'pulled moments ago':'sourced just now';
+  $('otsQ').textContent=m?m.question:'';
+  $('otsVal').textContent=m?pct(m.price):'';
+  const d=m&&m.delta;
+  $('otsChg').innerHTML=m?`<span class="${cls(d)}">${arrow(d)} ${flatish(d)?'0.0':Math.abs(d*100).toFixed(1)}</span>`:'';
+  $('otsChart').style.display='';
+  $('otsChart').innerHTML=`<div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">`+
+    (s.wire||[]).map((w,i)=>`<div style="display:flex;gap:12px;align-items:flex-start;background:rgba(255,255,255,.035);
+        border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:3px;padding:12px 14px;
+        animation:railin .45s ease-out both;animation-delay:${i*0.15}s">
+      <div style="font-family:var(--mono);font-size:12px;font-weight:800;color:var(--acc);white-space:nowrap">${social?'@':''}${esc(w.source)}</div>
+      <div style="font-size:16px;line-height:1.4;color:var(--ink)">${social?'“':''}${esc(w.text)}${social?'”':''}</div>
+    </div>`).join('')+`</div>`;
+}
+
+/** Forecast board — the resolution calendar as weather, in the squeeze panel.
+ *  Conditions: clear skies = the book is nearly certain, storms = coin flip. */
+function wxIcon(p){
+  const conf=Math.abs(p-0.5)*2; // 0 coin flip → 1 certain
+  if(conf>0.6) return `<svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="7" fill="var(--acc)"/>${[0,45,90,135,180,225,270,315].map(a=>`<line x1="15" y1="15" x2="${15+12*Math.cos(a*Math.PI/180)}" y2="${15+12*Math.sin(a*Math.PI/180)}" stroke="var(--acc)" stroke-width="2" stroke-linecap="round" transform="translate(0,0)" opacity=".8"/>`).join('')}<circle cx="15" cy="15" r="8.5" fill="#131211"/><circle cx="15" cy="15" r="6.5" fill="var(--acc)"/></svg>`;
+  if(conf>0.25) return `<svg width="30" height="30" viewBox="0 0 30 30"><circle cx="11" cy="12" r="5.5" fill="var(--acc)" opacity=".85"/><ellipse cx="17" cy="18" rx="9" ry="5.5" fill="#8a847d"/></svg>`;
+  return `<svg width="30" height="30" viewBox="0 0 30 30"><ellipse cx="15" cy="13" rx="9.5" ry="5.5" fill="#8a847d"/><path d="M14 18 L11 25 L16 21 L13 28" stroke="var(--down)" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>`;
+}
+function renderForecast(){
+  $('scrim').classList.remove('on');
+  document.querySelector('.shot').classList.add('squeeze');
+  $('ots').classList.add('hidden2');
+  const seen=new Set();
+  const upcoming=[...markets].filter(m=>m.resolveBy).sort((a,b)=>String(a.resolveBy).localeCompare(String(b.resolveBy)))
+    .filter(m=>{const k=(m.question||'').slice(0,60);if(seen.has(k))return false;seen.add(k);return true;}).slice(0,5);
+  $('rail').innerHTML=`<h5>The forecast · what settles when</h5>`+upcoming.map(m=>{
+    const d=new Date(m.resolveBy+'T00:00:00');
+    const day=isNaN(d)?'—':d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    return `<div class="card" style="display:flex;gap:12px;align-items:center;border-left-color:${Math.abs(m.price-0.5)<0.13?'var(--down)':'var(--acc)'}">
+      <div>${wxIcon(m.price)}</div>
+      <div style="flex:1;min-width:0">
+        <div class="sym">${day} · ${sym(m.id)}</div>
+        <div class="rq" style="font-size:13px">${esc(m.question)}</div>
+      </div>
+      <div style="font-family:var(--mono);font-weight:800;font-size:17px">${pct(m.price)}</div>
+    </div>`;
+  }).join('');
+  $('rail').classList.add('on');
 }
 
 /** Tease card — the "still ahead" beat that implies a rundown exists. */
-function renderTease(big){
-  $('ots').classList.toggle('big',!!big);
-  $('scrim').classList.toggle('on',!!big);
+function renderTease(line){
+  $('ots').classList.add('big');
+  $('scrim').classList.add('on');
   $('otsId').textContent='STILL AHEAD';
   $('otsSrc').textContent='';
   $('otsQ').textContent='';
   $('otsVal').textContent='';
   $('otsChg').innerHTML='';
-  $('otsChart').innerHTML=`<div style="font-size:30px;font-weight:700;line-height:1.3;padding:6px 0 10px">${esc($('say').textContent||'')}</div>`;
+  $('otsChart').style.display='flex';
+  $('otsChart').innerHTML=`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:0 8%">
+      <div style="background:var(--red);font-family:var(--mono);font-size:13px;font-weight:800;letter-spacing:.34em;padding:8px 18px">UP NEXT</div>
+      <div style="font-size:clamp(26px,3.4vw,44px);font-weight:800;line-height:1.3;text-align:center;text-shadow:0 4px 30px rgba(0,0,0,.6)">${esc(line||'')}</div>
+      <div style="width:96px;height:4px;background:var(--red)"></div>
+    </div>`;
 }
 
+function renderTickers(){
+  const list=markets.length?markets:[{id:'0',question:'awaiting contracts',price:0}];
+  $('strip').innerHTML=list.map(m=>
+    `<span class="sitem"><span class="nm">${sym(m.id)}</span>${pct(m.price)}
+      <span class="${cls(m.delta)}">${arrow(m.delta)}${m.delta?Math.abs(m.delta*100).toFixed(1):''}</span></span>`).join('').repeat(2);
+  $('row1').innerHTML=list.map(m=>
+    `<span class="titem"><span class="sym">${sym(m.id)}</span>${esc((m.question||'').slice(0,58))}
+      <b>${pct(m.price)}</b> <span class="${cls(m.delta)}">${arrow(m.delta)}</span></span>`).join('').repeat(2);
+  $('row2').innerHTML=list.map(m=>
+    `<span class="titem"><span class="sym">${sym(m.id)}</span>${m.volume?`VOL ${m.volume.toLocaleString()} · `:''}${m.tradeCount||0} TRD · @${esc(m.sourceHandle||'')}</span>`).join('').repeat(2);
+
+  renderStat();
+}
+
+/** The stat block alternates the book's numbers with the last line off the
+ *  wire, so the corner of the screen always has something alive in it. */
+let recentLines=[], statFlip=false;
+setInterval(()=>{ statFlip=!statFlip; renderStat(); },8000);
+function renderStat(){
+  if(statFlip&&recentLines.length){
+    $('statNm').textContent='THE WIRE';
+    $('statVv').textContent='';
+    $('statDd').innerHTML=`<span class="flat" style="white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;font-size:11.5px;line-height:1.35">${esc(recentLines[recentLines.length-1])}</span>`;
+    return;
+  }
+  // Credit volume when this session has seen real trades; otherwise the tick
+  // count, so the stat block never opens the hour reading a dead zero.
+  const vol=markets.reduce((s,m)=>s+(m.volume||0),0);
+  const ticks=markets.reduce((s,m)=>s+(m.tradeCount||0),0);
+  $('statNm').textContent=vol?'BOOK VOLUME':'BOOK ACTIVITY';
+  $('statVv').textContent=(vol||ticks).toLocaleString();
+  $('statDd').innerHTML=`<span class="flat">${vol?'credits · ':''}${markets.length} contracts</span>`;
+}
+
+function setLower(kicker,text,quiet){
+  $('badge').textContent=(kicker||'MARKETS').toUpperCase();
+  // Wrapped in a span so long copy clamps to two lines; past ~110 characters
+  // the type steps down instead of clipping mid-thought.
+  $('headline').classList.toggle('long',String(text||'').length>110);
+  $('headline').innerHTML=`<span>${esc(text)}</span>`;
+  $('headline').style.opacity=quiet?.72:1;
+}
+
+function showSting(name,at){
+  if(livePos(at)>2.4) return;   // joined after the sting finished
+  $('stingNm').textContent=name;
+  const el=$('sting'); el.classList.add('on');
+  stingSound();
+  setTimeout(()=>el.classList.remove('on'),1900);
+}
+
+function showBreaking(s){
+  $('brkLine').textContent=s.line;
+  const up=s.to>s.from;
+  $('brkMove').innerHTML=`<span class="${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs((s.to-s.from)*100).toFixed(0)} pts</span>
+    <span class="flat">${(s.from*100).toFixed(1)} → ${(s.to*100).toFixed(1)}</span>`;
+  $('brk').classList.add('on');
+  breakSound();
+  if(s.audioPath){ playVO(s.audioPath,s.at); setTimeout(()=>$('brk').classList.remove('on'),(s.seconds||5)*1000+600); }
+}
+
+/* ------------------------------------------------------------------ apply */
 function apply(msg){
+  if(msg.serverNow) clockSkew=msg.serverNow-Date.now();
+  if(PROGRAM&&!busReady) routeAudio();
+  if(msg.preload){ prefetch(msg.preload.videoUrl); prefetch(msg.preload.audioPath); return; }
   if(msg.idleUrl && !idleReady){
     const i=$('idle'); i.src=msg.idleUrl;
     i.oncanplay=()=>{ idleReady=true; i.classList.add('on'); $('poster').classList.add('off'); };
@@ -376,36 +816,65 @@ function apply(msg){
   }
   if(msg.markets){ markets=msg.markets; renderTickers(); }
   if(msg.traders){ traders=msg.traders; }
+  if(msg.recent){ recentLines=msg.recent; }
+  if(msg.watching!==undefined){ $('bugWatch').textContent=msg.watching>1?`· ${msg.watching} watching`:''; }
 
   const s=msg.segment;
   if(!s){ renderOts(false); return; }
 
-  if(s.kind==='sting'){ showSting(s.badge); return; }
+  if(s.kind==='sting'){ hideOverlays(); toIdle(); showSting(s.badge,s.at); return; }
   if(s.kind==='breaking'){ showBreaking(s); return; }
 
   if(s.kind==='beat'){
     focusId=s.marketId||focusId;
-    const who = s.speaker==='vera'?'VERA · YES' : s.speaker==='kane'?'KANE · NO' : null;
+    const over=livePos(s.at)>(s.seconds||0)+0.75;   // joined after this beat ended
+
+    // Crossfire: the two-box is its own stage.
+    if(s.treatment==='twobox'&&s.speaker!=='anchor'&&s.videoUrl){
+      const who=s.speaker==='bull'?'MAYA REYES · YES':'GRANT ELLISON · NO';
+      setLower(`${s.kicker} — ${who}`,s.line,false);
+      if(!over) renderTwobox(s);
+      return;
+    }
+
+    hideOverlays();
+    const WHO={bull:'MAYA REYES · YES',bear:'GRANT ELLISON · NO',reporter:'OMAR REESE · THE FLOOR',cohost:'DEREK SHAW',weather:'APRIL CHEN · MARKET METEOROLOGIST'};
+    // One-off characters (vox pops) carry their own strap from the writer.
+    const who = s.strap || WHO[s.speaker] || null;
     setLower(who?`${s.kicker} — ${who}`:s.kicker, s.line, false);
+
+    // PACKAGE: reporter's track over b-roll — pictures full frame, no card.
+    if(s.videoUrl&&s.audioPath){
+      $('ots').classList.add('hidden2');
+      $('scrim').classList.remove('on');
+      toTalk(s.videoUrl,s.at,{loop:true,forceMute:true});
+      playVO(s.audioPath,s.at);
+      return;
+    }
 
     // Treatment picks the graphic, so the same segment never looks the same as
     // the one before it.
     const graphic=(big)=>{
       if(s.treatment==='balances') renderKarma(big);
       else if(s.treatment==='quote') renderOrigin(big);
-      else if(s.treatment==='tease') renderTease(big);
+      else if(s.treatment==='tease') renderTease(s.line);
+      else if(s.treatment==='headlines') renderRail();
+      else if(s.treatment==='forecast') renderForecast();
+      else if(s.treatment==='wire'&&s.wire&&s.wire.length) renderWire(s);
       else renderOts(big);
     };
 
-    if(s.videoUrl){ graphic(false); toTalk(s.videoUrl); }   // on camera → graphic over the shoulder
-    else { toIdle(); graphic(true); playVO(s.audioPath); }  // VO → graphic takes the frame
+    if(over){ toIdle(); graphic(false); return; }
+    if(s.videoUrl){ graphic(false); $('scrim').classList.remove('on'); toTalk(s.videoUrl,s.at); }   // on camera → graphic rides beside, never a dimmer
+    else { toIdle(); graphic(true); playVO(s.audioPath,s.at); }  // VO → graphic takes the frame
     return;
   }
 
   if(s.kind==='board'){
     if(s.markets){ markets=s.markets; renderTickers(); }
+    hideOverlays();
     toIdle();
-    renderOts(true);
+    renderFullboard();
     setLower('The board','Live odds across the book.',true);
   }
 }

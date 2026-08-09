@@ -1,41 +1,41 @@
 {
-  "note": "Generated once and locked. Do not regenerate — character drift breaks the consistency claim.",
+  "note": "Generated once and locked. Do not regenerate \u2014 character drift breaks the consistency claim.",
   "symmetric": true,
   "symmetryViolations": [],
   "champions": {
-    "vera": {
-      "side": "affirmative",
-      "file": "assets/champions/vera.jpg",
-      "bytes": 166923,
-      "sha256": "48e0f0fe9a83a376afb1a5e36bfbc3448b1d39f0fda97f38477951e2068c7128",
-      "prompt": "Studio portrait of a fictional debate commentator named VERA. short dark hair, wearing a charcoal jacket over a plain shirt. Shoulders-up framing, centered, facing camera directly. Flat neutral grey seamless backdrop. Even, neutral three-point lighting with no rim light and no colour cast. Neutral composed expression, mouth closed. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
-      "sourceUrl": "https://imgen.x.ai/xai-imgen/xai-tmp-imgen-01148314-aef7-94be-b71a-697bf676e3af-31619860.jpeg"
-    },
-    "kane": {
-      "side": "negative",
-      "file": "assets/champions/kane.jpg",
-      "bytes": 198622,
-      "sha256": "be300b929369bc962288caf897f114040fa3bc1d8229354e4d402a9a08089525",
-      "prompt": "Studio portrait of a fictional debate commentator named KANE. short light hair, wearing a slate jacket over a plain shirt. Shoulders-up framing, centered, facing camera directly. Flat neutral grey seamless backdrop. Even, neutral three-point lighting with no rim light and no colour cast. Neutral composed expression, mouth closed. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
-      "sourceUrl": "https://imgen.x.ai/xai-imgen/xai-tmp-imgen-cb67b604-e1d3-99f3-b493-0cf58de2c202-7e2234b3.jpeg"
-    },
     "anchor": {
       "role": "anchor",
       "file": "assets/champions/anchor.jpg",
-      "bytes": 208531,
-      "sha256": "a50d63c60ee398d4fce3cef7ae2f3402970dd4a565c32de89cc57184572184c8",
-      "prompt": "Studio portrait of a fictional television news anchor named MARA VOSS, seated at a modern news desk. Composed professional expression, mouth closed, facing camera directly. Head-and-shoulders framing with the desk edge visible at the bottom. Behind is a softly out-of-focus broadcast studio with cool blue ambient light and faint screen glow. Crisp broadcast lighting on the face. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
-      "sourceUrl": "https://imgen.x.ai/xai-imgen/xai-tmp-imgen-66c63410-1dd4-9dcc-8ef9-1e66ba00663a-ae98a862.jpeg"
+      "bytes": 274183,
+      "sha256": "94d0223c27c0007ef276aa299a3d8a649558c9ed0fbd36adfd6d59259f6cd449",
+      "prompt": "Broadcast still of a fictional television news anchor named MARA VOSS anchoring the flagship desk of a premier financial news network. Sharp dark blazer over a white blouse, seated at a wide curved glass anchor desk with a brushed-metal nameplate reading \"MARA VOSS\", hands lightly clasped on the desk, composed confident expression with the hint of a wry smile, mouth closed, facing camera. Framed waist-up, centered, desk edge visible. Behind her a sweeping newsroom set: a giant curved LED video wall with out-of-focus market charts glowing blue and amber, red and white accent lighting along the studio architecture, producers' desks far in the background, strong depth of field. Crisp broadcast key light with warm fill. Photographic, sharp focus on the face, 35mm lens look. Not a real or identifiable person.",
+      "sourceUrl": "https://imgen.x.ai/xai-imgen/xai-tmp-imgen-793aa5fa-ca41-93b8-ba7e-9964218d49cb-1b220ac3.jpeg"
+    },
+    "affirmative": {
+      "side": "affirmative",
+      "file": "assets/champions/affirmative.jpg",
+      "bytes": 246422,
+      "sha256": "ac294ee3d3c406e9f51404dcb4900cb9eb9dd11201ea89dc16c0604214b6ff30",
+      "prompt": "Broadcast still of a fictional markets commentator named MAYA REYES on the set of a live financial television network. short dark hair, wearing a tailored burgundy blazer over an open-collar shirt. Seated at a glass panel desk angled slightly toward camera, hands resting naturally on the desk, engaged confident expression, mouth closed. Framed waist-up with headroom, desk edge visible at the bottom. Behind them a floor-to-ceiling wall of out-of-focus trading screens with blue and amber market tickers and a soft evening city-lights glow, strong depth of field. Polished broadcast key light with warm fill and a subtle rim light. Photographic, sharp focus on the face, 35mm lens look. Not a real or identifiable person.",
+      "sourceUrl": "https://imgen.x.ai/xai-imgen/xai-tmp-imgen-bb57391d-4db0-9bd5-9076-45f0b65d4b3c-ae86b898.jpeg"
+    },
+    "negative": {
+      "side": "negative",
+      "file": "assets/champions/negative.jpg",
+      "bytes": 312909,
+      "sha256": "e70e01923a620006e57a67d18250bd11d2080b14d0807fc045ee675aed645db0",
+      "prompt": "Broadcast still of a fictional markets commentator named GRANT ELLISON on the set of a live financial television network. short steel-grey hair, wearing a midnight navy suit jacket over an open-collar shirt. Seated at a glass panel desk angled slightly toward camera, hands resting naturally on the desk, engaged confident expression, mouth closed. Framed waist-up with headroom, desk edge visible at the bottom. Behind them a floor-to-ceiling wall of out-of-focus trading screens with blue and amber market tickers and a soft evening city-lights glow, strong depth of field. Polished broadcast key light with warm fill and a subtle rim light. Photographic, sharp focus on the face, 35mm lens look. Not a real or identifiable person.",
+      "sourceUrl": "https://imgen.x.ai/xai-imgen/xai-tmp-imgen-8e77d8c1-16d2-9a36-8a2c-361f539f5c14-db158068.jpeg"
     }
   },
   "promptPair": {
     "affirmative": {
-      "reference": "Studio portrait of a fictional debate commentator named VERA. short dark hair, wearing a charcoal jacket over a plain shirt. Shoulders-up framing, centered, facing camera directly. Flat neutral grey seamless backdrop. Even, neutral three-point lighting with no rim light and no colour cast. Neutral composed expression, mouth closed. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
-      "loop": "The commentator speaks steadily to camera with natural mouth movement and small head motion. Static locked-off camera, no zoom, no push in. Lighting and background remain constant and even. Neutral professional delivery, no emphatic gestures."
+      "reference": "Broadcast still of a fictional markets commentator named MAYA REYES on the set of a live financial television network. short dark hair, wearing a tailored burgundy blazer over an open-collar shirt. Seated at a glass panel desk angled slightly toward camera, hands resting naturally on the desk, engaged confident expression, mouth closed. Framed waist-up with headroom, desk edge visible at the bottom. Behind them a floor-to-ceiling wall of out-of-focus trading screens with blue and amber market tickers and a soft evening city-lights glow, strong depth of field. Polished broadcast key light with warm fill and a subtle rim light. Photographic, sharp focus on the face, 35mm lens look. Not a real or identifiable person.",
+      "loop": "The commentator makes their case to camera like a pundit on live financial television: animated, leaning in slightly, natural hand gestures over the desk, expression tracking the argument. Subtle slow push-in. Lighting and background remain constant. Committed, energetic broadcast delivery."
     },
     "negative": {
-      "reference": "Studio portrait of a fictional debate commentator named KANE. short light hair, wearing a slate jacket over a plain shirt. Shoulders-up framing, centered, facing camera directly. Flat neutral grey seamless backdrop. Even, neutral three-point lighting with no rim light and no colour cast. Neutral composed expression, mouth closed. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.",
-      "loop": "The commentator speaks steadily to camera with natural mouth movement and small head motion. Static locked-off camera, no zoom, no push in. Lighting and background remain constant and even. Neutral professional delivery, no emphatic gestures."
+      "reference": "Broadcast still of a fictional markets commentator named GRANT ELLISON on the set of a live financial television network. short steel-grey hair, wearing a midnight navy suit jacket over an open-collar shirt. Seated at a glass panel desk angled slightly toward camera, hands resting naturally on the desk, engaged confident expression, mouth closed. Framed waist-up with headroom, desk edge visible at the bottom. Behind them a floor-to-ceiling wall of out-of-focus trading screens with blue and amber market tickers and a soft evening city-lights glow, strong depth of field. Polished broadcast key light with warm fill and a subtle rim light. Photographic, sharp focus on the face, 35mm lens look. Not a real or identifiable person.",
+      "loop": "The commentator makes their case to camera like a pundit on live financial television: animated, leaning in slightly, natural hand gestures over the desk, expression tracking the argument. Subtle slow push-in. Lighting and background remain constant. Committed, energetic broadcast delivery."
     }
   }
 }

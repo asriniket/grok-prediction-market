@@ -16,16 +16,17 @@ export type Side = 'affirmative' | 'negative';
 export const CHAMPIONS: Record<Side, { name: string; hair: string; jacket: string }> = {
   // Only these tokens may differ between the two champions. Everything else in
   // the scaffold is byte-identical, which is what makes the pair auditable.
-  affirmative: { name: 'VERA', hair: 'short dark hair', jacket: 'a charcoal jacket' },
-  negative: { name: 'KANE', hair: 'short light hair', jacket: 'a slate jacket' },
+  affirmative: { name: 'MAYA REYES', hair: 'short dark hair', jacket: 'a tailored burgundy blazer' },
+  negative: { name: 'GRANT ELLISON', hair: 'short steel-grey hair', jacket: 'a midnight navy suit jacket' },
 };
 
 /**
- * Deliberately neutral: no warmth cues, no lighting asymmetry, no camera
- * favouritism. "Even, neutral" appears for both because the whole point is
- * that neither messenger is more appealing than the other.
+ * The set is a real broadcast bureau — screens, depth, warm key light — because
+ * a debate staged against a blank wall reads as a hostage video, not television.
+ * Symmetry is preserved by construction: both sides render from this ONE
+ * template, so any vividness it adds is added to both messengers equally.
  */
-const REFERENCE_TEMPLATE = `Studio portrait of a fictional debate commentator named {NAME}. {HAIR}, wearing {JACKET} over a plain shirt. Shoulders-up framing, centered, facing camera directly. Flat neutral grey seamless backdrop. Even, neutral three-point lighting with no rim light and no colour cast. Neutral composed expression, mouth closed. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.`;
+const REFERENCE_TEMPLATE = `Broadcast still of a fictional markets commentator named {NAME} on the set of a live financial television network. {HAIR}, wearing {JACKET} over an open-collar shirt. Seated at a glass panel desk angled slightly toward camera, hands resting naturally on the desk, engaged confident expression, mouth closed. Framed waist-up with headroom, desk edge visible at the bottom. Behind them a floor-to-ceiling wall of out-of-focus trading screens with blue and amber market tickers and a soft evening city-lights glow, strong depth of field. Polished broadcast key light with warm fill and a subtle rim light. Photographic, sharp focus on the face, 35mm lens look. Not a real or identifiable person.`;
 
 /**
  * The anchor is a SEPARATE character from the two debaters, and deliberately so.
@@ -38,13 +39,38 @@ const REFERENCE_TEMPLATE = `Studio portrait of a fictional debate commentator na
  */
 export const ANCHOR_NAME = 'MARA VOSS';
 
-const ANCHOR_TEMPLATE = `Studio portrait of a fictional television news anchor named ${ANCHOR_NAME}, seated at a modern news desk. Composed professional expression, mouth closed, facing camera directly. Head-and-shoulders framing with the desk edge visible at the bottom. Behind is a softly out-of-focus broadcast studio with cool blue ambient light and faint screen glow. Crisp broadcast lighting on the face. Photographic, sharp focus, 50mm lens look. Not a real or identifiable person.`;
+const ANCHOR_TEMPLATE = `Broadcast still of a fictional television news anchor named ${ANCHOR_NAME} anchoring the flagship desk of a premier financial news network. Sharp dark blazer over a white blouse, seated at a wide curved glass anchor desk with a brushed-metal nameplate reading "MARA VOSS", hands lightly clasped on the desk, composed confident expression with the hint of a wry smile, mouth closed, facing camera. Framed waist-up, centered, desk edge visible. Behind her a sweeping newsroom set: a giant curved LED video wall with out-of-focus market charts glowing blue and amber, red and white accent lighting along the studio architecture, producers' desks far in the background, strong depth of field. Crisp broadcast key light with warm fill. Photographic, sharp focus on the face, 35mm lens look. Not a real or identifiable person.`;
 
 export function anchorReferencePrompt(): string {
   return ANCHOR_TEMPLATE;
 }
 
-const LOOP_TEMPLATE = `The commentator speaks steadily to camera with natural mouth movement and small head motion. Static locked-off camera, no zoom, no push in. Lighting and background remain constant and even. Neutral professional delivery, no emphatic gestures.`;
+/**
+ * The floor reporter — the fourth chair. He works STANDING at the video wall,
+ * which is what makes his segments read as a different location than the
+ * anchor desk even though it is the same virtual studio family.
+ */
+export const REPORTER_NAME = 'OMAR REESE';
+
+const REPORTER_TEMPLATE = `Broadcast still of a fictional markets floor reporter named ${REPORTER_NAME} reporting for a financial television network. Short black hair, neatly trimmed beard, wearing a navy checked sport coat over an open-collar white shirt, holding a slim tablet loosely in one hand. Standing, framed mid-shot from the waist up, angled slightly toward camera, weight shifted as if mid-report, engaged alert expression, mouth closed. Behind him a towering floor-to-ceiling wall of live market screens with amber and blue tickers and price charts, slightly out of focus, studio floor lighting catching the edge of the frame. Crisp broadcast key light with warm fill. Photographic, sharp focus on the face, 35mm lens look. Not a real or identifiable person.`;
+
+export function reporterReferencePrompt(): string {
+  return REPORTER_TEMPLATE;
+}
+
+/**
+ * The co-anchor — second chair at the flagship desk. Same studio family as
+ * the lead anchor's set so cutting between their singles reads as one desk.
+ */
+export const COHOST_NAME = 'DEREK SHAW';
+
+const COHOST_TEMPLATE = `Broadcast still of a fictional television news co-anchor named ${COHOST_NAME} at the flagship desk of a premier financial news network. Early 40s, short dark hair, light stubble, navy suit with no tie over a crisp pale-blue shirt, seated at a wide curved glass anchor desk angled slightly camera-right, one hand resting on loose notes, warm engaged expression with an easy half-smile, mouth closed, facing camera. Framed waist-up. Behind him the sweeping newsroom set: a giant curved LED video wall with out-of-focus market charts glowing blue and amber, red and white accent lighting along the studio architecture, strong depth of field. Crisp broadcast key light with warm fill. Photographic, sharp focus on the face, 35mm lens look. Not a real or identifiable person.`;
+
+export function cohostReferencePrompt(): string {
+  return COHOST_TEMPLATE;
+}
+
+const LOOP_TEMPLATE = `The commentator makes their case to camera like a pundit on live financial television: animated, leaning in slightly, natural hand gestures over the desk, expression tracking the argument. Subtle slow push-in. Lighting and background remain constant. Committed, energetic broadcast delivery.`;
 
 function fill(template: string, side: Side): string {
   const c = CHAMPIONS[side];

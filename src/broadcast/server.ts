@@ -8,7 +8,7 @@ import { ensureIdleLoop } from './news/anchor.js';
 import { NewsDirector, type NewsSegment } from './news/director.js';
 
 /**
- * Karma Markets — the live channel.
+ * Threadline — the live channel.
  *
  *   npm run dev         # the market engine (port 3000)
  *   npm run broadcast   # this (port 8082)
@@ -28,7 +28,7 @@ const MIME: Record<string, string> = {
 };
 
 async function main() {
-  console.log(`\n${C.bold}Karma Markets — live channel${C.reset}`);
+  console.log(`\n${C.bold}THREADLINE LIVE — channel${C.reset}`);
 
   if (!existsSync(resolve(process.cwd(), 'assets/champions/anchor.jpg'))) {
     throw new Error('Anchor reference missing. Run: npm run champions:lock');

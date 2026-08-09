@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { xai } from '../xai/rest.js';
-import { anchorReferencePrompt, loopPrompt, referencePrompt, type Side } from './scaffold.js';
+import { anchorReferencePrompt, cohostReferencePrompt, loopPrompt, referencePrompt, reporterReferencePrompt, type Side } from './scaffold.js';
 
 /**
  * Champion asset generation.
@@ -48,8 +48,9 @@ export async function generateReference(side: Side): Promise<ChampionReference> 
  * generation with no hosting step and no drift.
  */
 export function loadLockedReference(side: Side): ChampionReference {
-  const name = side === 'affirmative' ? 'vera' : 'kane';
-  const path = resolve(process.cwd(), `assets/champions/${name}.jpg`);
+  // Files are named by SIDE, not by character name — on-air names can change
+  // without touching locked assets.
+  const path = resolve(process.cwd(), `assets/champions/${side}.jpg`);
   const bytes = readFileSync(path);
   return {
     side,
@@ -76,6 +77,65 @@ export function loadAnchorReference(): { url: string; prompt: string } {
   const path = resolve(process.cwd(), 'assets/champions/anchor.jpg');
   const bytes = readFileSync(path);
   return { url: `data:image/jpeg;base64,${bytes.toString('base64')}`, prompt: anchorReferencePrompt() };
+}
+
+/** The floor reporter's locked portrait. Fourth chair, own template. */
+export async function generateReporterReference(): Promise<{ url: string; prompt: string }> {
+  const prompt = reporterReferencePrompt();
+  const res = await xai.post<{ data?: Array<{ url?: string }> }>('/images/generations', {
+    model: IMAGE_MODEL,
+    prompt,
+    n: 1,
+    response_format: 'url',
+  });
+  const url = res.data?.[0]?.url;
+  if (!url) throw new Error('no image URL returned for reporter');
+  return { url, prompt };
+}
+
+export function loadReporterReference(): { url: string; prompt: string } {
+  const path = resolve(process.cwd(), 'assets/champions/reporter.jpg');
+  const bytes = readFileSync(path);
+  return { url: `data:image/jpeg;base64,${bytes.toString('base64')}`, prompt: reporterReferencePrompt() };
+}
+
+/** The co-anchor's locked portrait — second chair at the desk. */
+export async function generateCohostReference(): Promise<{ url: string; prompt: string }> {
+  const prompt = cohostReferencePrompt();
+  const res = await xai.post<{ data?: Array<{ url?: string }> }>('/images/generations', {
+    model: IMAGE_MODEL,
+    prompt,
+    n: 1,
+    response_format: 'url',
+  });
+  const url = res.data?.[0]?.url;
+  if (!url) throw new Error('no image URL returned for cohost');
+  return { url, prompt };
+}
+
+export function loadCohostReference(): { url: string; prompt: string } {
+  const path = resolve(process.cwd(), 'assets/champions/cohost.jpg');
+  const bytes = readFileSync(path);
+  return { url: `data:image/jpeg;base64,${bytes.toString('base64')}`, prompt: cohostReferencePrompt() };
+}
+
+/** The market meteorologist's locked portrait at her forecast wall. */
+export function loadWeatherReference(): { url: string } {
+  const path = resolve(process.cwd(), 'assets/champions/weather.jpg');
+  const bytes = readFileSync(path);
+  return { url: `data:image/jpeg;base64,${bytes.toString('base64')}` };
+}
+
+/**
+ * The desk two-shot: both anchors at one table, composed from the two locked
+ * singles via multi-image editing (POST /images/edits, `images: [...]` — the
+ * documented single-`image` field rejects arrays). Mara sits frame-LEFT,
+ * Derek frame-RIGHT; video direction depends on that layout.
+ */
+export function loadDeskReference(): { url: string } {
+  const path = resolve(process.cwd(), 'assets/champions/desk.jpg');
+  const bytes = readFileSync(path);
+  return { url: `data:image/jpeg;base64,${bytes.toString('base64')}` };
 }
 
 async function pollVideo(requestId: string, timeoutMs = 300_000): Promise<string> {
