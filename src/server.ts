@@ -64,7 +64,10 @@ const server = app.listen(config.port, () => {
 // The live channel rides on the same server so the whole product is one
 // origin. Off by default because it generates video; LIVE_BROADCAST_ENABLED=1 turns it on.
 const broadcast =
-  process.env.LIVE_BROADCAST_ENABLED === "1"
+  // Two flag names guard the same door: LIVE_BROADCAST_ENABLED is the newer
+  // team name, BROADCAST the original one — honor both so an env written for
+  // either era of the codebase still lights the channel.
+  process.env.LIVE_BROADCAST_ENABLED === "1" || process.env.BROADCAST === "1"
     ? mountBroadcast({
         app,
         server,
