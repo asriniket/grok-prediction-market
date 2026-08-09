@@ -144,6 +144,13 @@ export class PostgresStore {
 
   constructor(connectionString: string) {
     this.pool = new pg.Pool({ connectionString, max: 8, idleTimeoutMillis: 30_000 });
+    // Neon's pooler terminates idle connections from its side. Without this
+    // handler, pg emits an unhandled 'error' event for the dead idle client
+    // and takes the whole process down; with it, the pool simply replaces the
+    // connection on next use.
+    this.pool.on("error", (err) => {
+      console.error(`[pg] idle client error (recovered): ${err instanceof Error ? err.message : err}`);
+    });
   }
 
   async close(): Promise<void> {
