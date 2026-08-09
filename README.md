@@ -23,7 +23,10 @@ to use structured Grok extraction and X credentials to enable the live bot.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /` / `GET /markets/:marketId` | Local market index and interactive market page. |
+| `GET /portfolio` | Linked X trader's open positions and mark-to-market wallet view. |
+| `GET /api/portfolio` | JSON version of the linked trader portfolio. |
 | `GET /api/markets/:marketId/history` | Price history used by the live YES-probability chart. |
+| `POST /api/markets/:marketId/analysis` | Search X and cache a deeper Grok market pulse with source links and feed posts. |
 | `POST /api/markets` | Validate/extract a claim and create a market. |
 | `GET /api/markets/:marketId` | Market state, LMSR price, and the caller's position. |
 | `POST /api/markets/:marketId/trades` | Spend non-transferable karma credits on YES or NO. |
@@ -76,6 +79,15 @@ demo market pulse** every 12 seconds. These points are marked `DEMO` in the
 history API, do not represent users or volume, and exist only to make a fresh
 local market visibly live. The page surfaces liquidity depth and recent
 average price movement as market metrics.
+
+Grok turns a qualifying source post into a constrained binary question,
+resolution rules, deadline, and short source synopsis in one structured
+creation pass. When someone first opens the market, it additionally searches
+recent and historical X discussion to generate a cached Market AI analysis:
+observed signals, catalysts, counter-signals, what to watch, and a tweet-style
+feed of search-verified posts. The feed has a manual Refresh control for a new
+pulse. This X context is never a forecast, trading recommendation, or
+resolution source.
 
 Karma is a capped, public-history-derived seed, not a truth score. The default
 score uses account age, total post count, and a median of up to 100 sampled

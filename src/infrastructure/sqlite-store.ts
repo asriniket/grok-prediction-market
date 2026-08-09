@@ -10,6 +10,7 @@ import type {
   AccountHistoryInput,
   BotCredentials,
   Market,
+  MarketAnalysis,
   MarketMetrics,
   MarketPricePoint,
   MarketSnapshot,
@@ -67,6 +68,8 @@ function marketFromRow(row: Row): Market {
     },
     creatorUserId: String(row.creator_user_id),
     question: String(row.question),
+    summary: row.summary === null || row.summary === undefined ? null : String(row.summary),
+    analysis: analysisFromRow(row.analysis),
     resolutionCriteria: parseJson<string[]>(row.resolution_criteria),
     closesAt: String(row.closes_at),
     status: String(row.status) as MarketStatus,
@@ -78,6 +81,29 @@ function marketFromRow(row: Row): Market {
     createdAt: String(row.created_at),
     resolvedAt: row.resolved_at === null ? null : String(row.resolved_at),
   };
+}
+
+function analysisFromRow(value: unknown): MarketAnalysis | null {
+  if (value === null || value === undefined) return null;
+  try {
+    const parsed = parseJson<Partial<MarketAnalysis>>(value);
+    if (typeof parsed.body !== "string" || typeof parsed.generatedAt !== "string" || !Array.isArray(parsed.sources)) return null;
+    return {
+      body: parsed.body,
+      sources: parsed.sources.filter((source): source is string => typeof source === "string"),
+      posts: Array.isArray(parsed.posts)
+        ? parsed.posts.filter((post): post is MarketAnalysis["posts"][number] => Boolean(post) && typeof post === "object"
+          && typeof (post as unknown as Record<string, unknown>).url === "string"
+          && typeof (post as unknown as Record<string, unknown>).handle === "string"
+          && typeof (post as unknown as Record<string, unknown>).text === "string"
+          && typeof (post as unknown as Record<string, unknown>).createdAt === "string"
+          && typeof (post as unknown as Record<string, unknown>).relevance === "string")
+        : [],
+      generatedAt: parsed.generatedAt,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function positionFromRow(row: Row): Position {
@@ -127,6 +153,8 @@ export class SqliteStore {
         source_created_at TEXT NOT NULL,
         creator_user_id TEXT NOT NULL,
         question TEXT NOT NULL,
+        summary TEXT,
+        analysis TEXT,
         resolution_criteria TEXT NOT NULL,
         closes_at TEXT NOT NULL,
         status TEXT NOT NULL CHECK(status IN ('OPEN', 'RESOLVED', 'UNRESOLVABLE')),
@@ -192,10 +220,12 @@ export class SqliteStore {
     // forward-only, data-preserving migration instead of recreating tables.
     this.ensureColumn("trades", "side", "TEXT NOT NULL DEFAULT 'BUY' CHECK(side IN ('BUY', 'SELL'))");
     this.ensureColumn("market_price_points", "kind", "TEXT NOT NULL DEFAULT 'TRADE' CHECK(kind IN ('OPEN', 'TRADE', 'DEMO'))");
+    this.ensureColumn("markets", "summary", "TEXT");
+    this.ensureColumn("markets", "analysis", "TEXT");
     this.db.exec("PRAGMA optimize");
   }
 
-  private ensureColumn(table: "trades" | "market_price_points", column: string, definition: string): void {
+  private ensureColumn(table: "markets" | "trades" | "market_price_points", column: string, definition: string): void {
     const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Row[];
     if (columns.some((item) => String(item.name) === column)) return;
     this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
@@ -247,6 +277,7 @@ export class SqliteStore {
     sourcePost: SourcePost;
     creatorUserId: string;
     question: string;
+    summary?: string | null;
     resolutionCriteria: string[];
     closesAt: string;
     liquidityB: number;
@@ -259,9 +290,9 @@ export class SqliteStore {
       this.db.prepare(`
         INSERT INTO markets (
           id, source_post_id, source_url, source_text, source_author_id, source_author_handle, source_created_at,
-          creator_user_id, question, resolution_criteria, closes_at, status, resolved_outcome, resolution_sources,
+          creator_user_id, question, summary, resolution_criteria, closes_at, status, resolved_outcome, resolution_sources,
           liquidity_b, yes_shares, no_shares, created_at, resolved_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', NULL, '[]', ?, 0, 0, ?, NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', NULL, '[]', ?, 0, 0, ?, NULL)
       `).run(
         id,
         input.sourcePost.id,
@@ -272,6 +303,7 @@ export class SqliteStore {
         input.sourcePost.createdAt,
         input.creatorUserId,
         input.question,
+        input.summary ?? null,
         JSON.stringify(input.resolutionCriteria),
         input.closesAt,
         input.liquidityB,
@@ -285,6 +317,26 @@ export class SqliteStore {
   getMarket(marketId: string): Market | null {
     const row = this.db.prepare("SELECT * FROM markets WHERE id = ?").get(marketId) as Row | undefined;
     return row ? marketFromRow(row) : null;
+  }
+
+  saveMarketSummary(marketId: string, summary: string): string {
+    return this.transaction(() => {
+      const market = this.getMarket(marketId);
+      if (!market) throw new NotFoundError("Market not found");
+      if (market.summary) return market.summary;
+      this.db.prepare("UPDATE markets SET summary = ? WHERE id = ?").run(summary, marketId);
+      return summary;
+    });
+  }
+
+  saveMarketAnalysis(marketId: string, analysis: MarketAnalysis, replace = false): MarketAnalysis {
+    return this.transaction(() => {
+      const market = this.getMarket(marketId);
+      if (!market) throw new NotFoundError("Market not found");
+      if (market.analysis && !replace) return market.analysis;
+      this.db.prepare("UPDATE markets SET analysis = ? WHERE id = ?").run(JSON.stringify(analysis), marketId);
+      return analysis;
+    });
   }
 
   getMarketBySourcePost(sourcePostId: string): Market | null {

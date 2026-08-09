@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { calculateKarma, KARMA_CEILING, KARMA_FLOOR } from "../src/domain/karma.js";
+import { validateClaimDraft } from "../src/services/claim-extractor.js";
 import { costToBuy, outcomePrice, proceedsForSale, sharesForBudget } from "../src/domain/lmsr.js";
 import { SqliteStore } from "../src/infrastructure/sqlite-store.js";
 import type { MarketStore } from "../src/infrastructure/store.js";
@@ -18,6 +19,7 @@ const sourcePost: SourcePost = {
 
 const claim: ClaimDraft = {
   question: "Will the launch happen by next Friday?",
+  summary: "The market asks whether the stated launch happens by next Friday. YES depends on a qualifying official announcement by that deadline; otherwise it resolves NO.",
   resolutionCriteria: ["An official launch announcement published by the stated deadline resolves YES."],
   closesAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   rationale: "The post names a concrete event and deadline.",
@@ -42,6 +44,89 @@ describe("karma seeding", () => {
     expect(fresh.seed).toBe(KARMA_FLOOR);
     expect(established.seed).toBe(KARMA_CEILING);
     expect(established.seed / fresh.seed).toBeLessThanOrEqual(50);
+  });
+});
+
+describe("claim validation", () => {
+  it("accepts a normalized binary question from a question-form source post", () => {
+    const closesAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    expect(validateClaimDraft({
+      ...claim,
+      question: "Will OpenAI release another model within the next month?",
+      closesAt,
+    })).toMatchObject({ question: "Will OpenAI release another model within the next month?" });
+  });
+
+  it("rejects the extractor's unresolvable sentinel and meta-market questions", () => {
+    const closesAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    expect(() => validateClaimDraft({ ...claim, question: "UNRESOLVABLE CLAIM", closesAt })).toThrow(/marketable/i);
+    expect(() => validateClaimDraft({ ...claim, question: "Is this claim objectively resolvable?", closesAt })).toThrow(/marketable/i);
+  });
+});
+
+describe("market briefs", () => {
+  it("saves Grok's market analysis while creating a market from only the source post", async () => {
+    const store = new SqliteStore(":memory:");
+    const markets = new MarketService(store as unknown as MarketStore, { extract: async () => claim }, new EventBus());
+
+    const created = await markets.createMarket({ sourcePost, creatorUserId: "trader" });
+
+    expect(created.market.question).toBe(claim.question);
+    expect(created.market.summary).toBe(claim.summary);
+    store.close();
+  });
+
+  it("generates a source-grounded brief once and reuses the saved value", async () => {
+    const store = new SqliteStore(":memory:");
+    const generate = vi.fn().mockResolvedValue("This brief explains the market using only its source post and resolution criteria.");
+    const markets = new MarketService(store as unknown as MarketStore, { extract: async () => claim }, new EventBus(), { generate });
+    const created = await markets.createMarket({ sourcePost, creatorUserId: "trader", claim: { ...claim, summary: undefined } });
+
+    await expect(markets.ensureSummary(created.market.id)).resolves.toMatch(/source post/i);
+    await expect(markets.ensureSummary(created.market.id)).resolves.toMatch(/source post/i);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(store.getMarket(created.market.id)?.summary).toMatch(/source post/i);
+    store.close();
+  });
+});
+
+describe("market AI analysis", () => {
+  it("caches the X pulse separately from the source-derived market setup", async () => {
+    const store = new SqliteStore(":memory:");
+    const analysis = {
+      body: "Pulse: Relevant X posts point to a pending product update, but the signal is still incomplete.\n\nCatalysts: An official announcement would materially strengthen the case.\n\nCounter-signals: No official release has been posted yet.\n\nWatch: The next official product announcement.",
+      sources: ["https://x.com/example/status/1"],
+      posts: [{
+        url: "https://x.com/example/status/1",
+        handle: "example",
+        text: "A relevant example post supporting the market pulse.",
+        createdAt: "Aug 8",
+        relevance: "Relevant because it discusses the pending product update.",
+      }],
+      generatedAt: "2026-08-08T00:00:00.000Z",
+    };
+    const refreshedAnalysis = {
+      ...analysis,
+      body: "Pulse: The refreshed X search found a newer public discussion point, but the signal remains incomplete.\n\nCatalysts: An official announcement would materially strengthen the case.\n\nCounter-signals: No official release has been posted yet.\n\nWatch: The next official product announcement.",
+      generatedAt: "2026-08-08T01:00:00.000Z",
+    };
+    const generate = vi.fn().mockResolvedValueOnce(analysis).mockResolvedValueOnce(refreshedAnalysis);
+    const markets = new MarketService(
+      store as unknown as MarketStore,
+      { extract: async () => claim },
+      new EventBus(),
+      undefined,
+      { generate },
+    );
+    const created = await markets.createMarket({ sourcePost, creatorUserId: "trader" });
+
+    await expect(markets.ensureAnalysis(created.market.id)).resolves.toEqual(analysis);
+    await expect(markets.ensureAnalysis(created.market.id)).resolves.toEqual(analysis);
+    await expect(markets.ensureAnalysis(created.market.id, true)).resolves.toEqual(refreshedAnalysis);
+    await expect(markets.ensureAnalysis(created.market.id)).resolves.toEqual(refreshedAnalysis);
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(store.getMarket(created.market.id)?.analysis).toEqual(refreshedAnalysis);
+    store.close();
   });
 });
 

@@ -2,18 +2,21 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { calculateKarma } from "../domain/karma.js";
 import { ConflictError, AppError, NotFoundError } from "../domain/errors.js";
-import { outcomePrice, proceedsForSale, sharesForBudget, type AmmState } from "../domain/lmsr.js";
+import { lmsrCost, outcomePrice, proceedsForSale, sharesForBudget, type AmmState } from "../domain/lmsr.js";
 import type {
   Account,
   AccountHistoryInput,
   BotCredentials,
   Market,
+  MarketAnalysis,
   MarketMetrics,
   MarketPricePoint,
   MarketSnapshot,
   MarketStatus,
   Outcome,
   Position,
+  Portfolio,
+  PortfolioPosition,
   SourcePost,
   Trade,
 } from "../domain/types.js";
@@ -73,6 +76,8 @@ function marketFromRow(row: Row): Market {
     },
     creatorUserId: String(row.creator_user_id),
     question: String(row.question),
+    summary: row.summary === null || row.summary === undefined ? null : String(row.summary),
+    analysis: analysisFromRow(row.analysis),
     resolutionCriteria: parseJson<string[]>(row.resolution_criteria),
     closesAt: String(row.closes_at),
     status: String(row.status) as MarketStatus,
@@ -84,6 +89,29 @@ function marketFromRow(row: Row): Market {
     createdAt: String(row.created_at),
     resolvedAt: row.resolved_at === null ? null : String(row.resolved_at),
   };
+}
+
+function analysisFromRow(value: unknown): MarketAnalysis | null {
+  if (value === null || value === undefined) return null;
+  try {
+    const parsed = parseJson<Partial<MarketAnalysis>>(value);
+    if (typeof parsed.body !== "string" || typeof parsed.generatedAt !== "string" || !Array.isArray(parsed.sources)) return null;
+    return {
+      body: parsed.body,
+      sources: parsed.sources.filter((source): source is string => typeof source === "string"),
+      posts: Array.isArray(parsed.posts)
+        ? parsed.posts.filter((post): post is MarketAnalysis["posts"][number] => Boolean(post) && typeof post === "object"
+          && typeof (post as unknown as Record<string, unknown>).url === "string"
+          && typeof (post as unknown as Record<string, unknown>).handle === "string"
+          && typeof (post as unknown as Record<string, unknown>).text === "string"
+          && typeof (post as unknown as Record<string, unknown>).createdAt === "string"
+          && typeof (post as unknown as Record<string, unknown>).relevance === "string")
+        : [],
+      generatedAt: parsed.generatedAt,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function positionFromRow(row: Row): Position {
@@ -130,6 +158,8 @@ export class PostgresStore {
         source_created_at text NOT NULL,
         creator_user_id text NOT NULL,
         question text NOT NULL,
+        summary text,
+        analysis text,
         resolution_criteria text NOT NULL,
         closes_at text NOT NULL,
         status text NOT NULL CHECK(status IN ('OPEN','RESOLVED','UNRESOLVABLE')),
@@ -191,6 +221,10 @@ export class PostgresStore {
       CREATE INDEX IF NOT EXISTS idx_market_price_points_market_id_id
         ON market_price_points(market_id, id);
     `);
+    // Existing shared books predate the market brief. Add it without rewriting
+    // any markets that have already been created.
+    await this.pool.query("ALTER TABLE markets ADD COLUMN IF NOT EXISTS summary text");
+    await this.pool.query("ALTER TABLE markets ADD COLUMN IF NOT EXISTS analysis text");
   }
 
   /** Runs `work` on one client inside a transaction. */
@@ -278,6 +312,7 @@ export class PostgresStore {
     sourcePost: SourcePost;
     creatorUserId: string;
     question: string;
+    summary?: string | null;
     resolutionCriteria: string[];
     closesAt: string;
     liquidityB: number;
@@ -290,9 +325,9 @@ export class PostgresStore {
       await q.query(
         `INSERT INTO markets (
            id, source_post_id, source_url, source_text, source_author_id, source_author_handle, source_created_at,
-           creator_user_id, question, resolution_criteria, closes_at, status, resolved_outcome, resolution_sources,
+           creator_user_id, question, summary, resolution_criteria, closes_at, status, resolved_outcome, resolution_sources,
            liquidity_b, yes_shares, no_shares, created_at, resolved_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'OPEN',NULL,'[]',$12,0,0,$13,NULL)`,
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'OPEN',NULL,'[]',$13,0,0,$14,NULL)`,
         [
           id,
           input.sourcePost.id,
@@ -303,6 +338,7 @@ export class PostgresStore {
           input.sourcePost.createdAt,
           input.creatorUserId,
           input.question,
+          input.summary ?? null,
           JSON.stringify(input.resolutionCriteria),
           input.closesAt,
           input.liquidityB,
@@ -316,6 +352,28 @@ export class PostgresStore {
 
   async getMarket(marketId: string): Promise<Market | null> {
     return this.marketOn(this.pool as unknown as Q, marketId);
+  }
+
+  /** Persists the first successful brief; concurrent viewers receive the same one. */
+  async saveMarketSummary(marketId: string, summary: string): Promise<string> {
+    const { rows } = await this.pool.query(
+      "UPDATE markets SET summary = COALESCE(summary, $1) WHERE id = $2 RETURNING summary",
+      [summary, marketId],
+    );
+    if (!rows[0]) throw new NotFoundError("Market not found");
+    return String(rows[0].summary);
+  }
+
+  /** Persists the first successful X pulse so opening a market only searches once. */
+  async saveMarketAnalysis(marketId: string, analysis: MarketAnalysis, replace = false): Promise<MarketAnalysis> {
+    const { rows } = await this.pool.query(
+      "UPDATE markets SET analysis = CASE WHEN $3 THEN $1 ELSE COALESCE(analysis, $1) END WHERE id = $2 RETURNING analysis",
+      [JSON.stringify(analysis), marketId, replace],
+    );
+    if (!rows[0]) throw new NotFoundError("Market not found");
+    const saved = analysisFromRow(rows[0].analysis);
+    if (!saved) throw new AppError("Saved market analysis is invalid", 500, "ANALYSIS_STORAGE_ERROR");
+    return saved;
   }
 
   async getMarketBySourcePost(sourcePostId: string): Promise<Market | null> {
@@ -332,32 +390,79 @@ export class PostgresStore {
     return this.positionOn(this.pool as unknown as Q, marketId, userId);
   }
 
+  async getPortfolio(userId: string): Promise<Portfolio | null> {
+    const account = await this.getAccount(userId);
+    if (!account) return null;
+    const { rows } = await this.pool.query(
+      `SELECT market_id
+       FROM positions
+       WHERE user_id = $1 AND (yes_shares > 0.00000001 OR no_shares > 0.00000001)`,
+      [userId],
+    );
+    const positions = (await Promise.all(rows.map(async (row) => {
+      const snapshot = await this.getMarketSnapshot(String(row.market_id), userId);
+      const position = snapshot.position!;
+      // Settled shares are already reflected in the wallet and aren't open risk.
+      if (snapshot.market.status !== "OPEN") return null;
+      const state: AmmState = {
+        liquidityB: snapshot.market.liquidityB,
+        yesShares: snapshot.market.yesShares,
+        noShares: snapshot.market.noShares,
+      };
+      const exitState: AmmState = {
+        ...state,
+        yesShares: Math.max(0, state.yesShares - position.yesShares),
+        noShares: Math.max(0, state.noShares - position.noShares),
+      };
+      const estimatedExitValue = lmsrCost(state) - lmsrCost(exitState);
+      const item: PortfolioPosition = {
+        market: snapshot.market,
+        position,
+        priceYes: snapshot.priceYes,
+        priceNo: snapshot.priceNo,
+        estimatedExitValue,
+        openPnl: estimatedExitValue - position.netSpend,
+      };
+      return item;
+    }))).filter((item): item is PortfolioPosition => item !== null);
+    const estimatedExitValue = positions.reduce((total, item) => total + item.estimatedExitValue, 0);
+    return { account, positions, estimatedExitValue, totalEquity: account.availableBalance + estimatedExitValue };
+  }
+
   async getMarketSnapshot(marketId: string, userId?: string): Promise<MarketSnapshot> {
     const market = await this.getMarket(marketId);
     if (!market) throw new NotFoundError("Market not found");
+    const [points, position] = await Promise.all([
+      this.priceHistoryForMarket(market, 120),
+      userId ? this.getPosition(marketId, userId) : Promise.resolve(null),
+    ]);
     const state: AmmState = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
     return {
       market,
       priceYes: outcomePrice(state, "YES"),
       priceNo: outcomePrice(state, "NO"),
-      position: userId ? await this.getPosition(marketId, userId) : null,
-      metrics: await this.getMarketMetrics(marketId),
+      position,
+      metrics: this.metricsForMarket(market, points),
     };
   }
 
   async getPriceHistory(marketId: string, limit = 240): Promise<MarketPricePoint[]> {
     const market = await this.getMarket(marketId);
     if (!market) throw new NotFoundError("Market not found");
+    return this.priceHistoryForMarket(market, limit);
+  }
+
+  private async priceHistoryForMarket(market: Market, limit: number): Promise<MarketPricePoint[]> {
     const { rows } = await this.pool.query(
       `SELECT market_id, price_yes, recorded_at, kind FROM (
          SELECT market_id, price_yes, recorded_at, kind, id
          FROM market_price_points WHERE market_id = $1 ORDER BY id DESC LIMIT $2
        ) recent ORDER BY id ASC`,
-      [marketId, limit],
+      [market.id, limit],
     );
     if (rows.length === 0) {
       const state: AmmState = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
-      return [{ marketId, priceYes: outcomePrice(state, "YES"), recordedAt: market.createdAt, kind: "OPEN" }];
+      return [{ marketId: market.id, priceYes: outcomePrice(state, "YES"), recordedAt: market.createdAt, kind: "OPEN" }];
     }
     return rows.map((row) => ({
       marketId: String(row.market_id),
@@ -367,16 +472,20 @@ export class PostgresStore {
     }));
   }
 
-  async getMarketMetrics(marketId: string): Promise<MarketMetrics> {
-    const points = await this.getPriceHistory(marketId, 120);
+  private metricsForMarket(market: Market, points: MarketPricePoint[]): MarketMetrics {
     const moves = points.slice(1).map((point, index) => Math.abs(point.priceYes - points[index]!.priceYes));
-    const market = await this.getMarket(marketId);
     return {
-      liquidityDepth: market!.liquidityB,
+      liquidityDepth: market.liquidityB,
       volatility: moves.length === 0 ? 0 : moves.reduce((total, movement) => total + movement, 0) / moves.length,
       activityCount: Math.max(0, points.length - 1),
       demoActivityCount: points.filter((point) => point.kind === "DEMO").length,
     };
+  }
+
+  async getMarketMetrics(marketId: string): Promise<MarketMetrics> {
+    const market = await this.getMarket(marketId);
+    if (!market) throw new NotFoundError("Market not found");
+    return this.metricsForMarket(market, await this.priceHistoryForMarket(market, 120));
   }
 
   // --------------------------------------------------------------- trading
