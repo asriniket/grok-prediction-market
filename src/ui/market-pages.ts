@@ -259,7 +259,7 @@ function navAuth(account: Account | null): string {
 
 function layout(content: string, title: string, account: Account | null = null): string {
   return `<!doctype html>
-  <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Threadline</title><style>${styles}</style></head>
+  <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · Threadline</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%230d0d0d'/%3E%3Cpath d='M18 66 40 44 55 56 82 30' stroke='%23d5ff52' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"><style>${styles}</style></head>
   <body><main class="shell"><nav class="nav"><a href="/" class="brand">thread<i>line</i></a><span class="nav-links"><a href="/">Markets</a><a href="/portfolio">Portfolio</a><a href="/live" class="live"><i></i>Live</a></span>${navAuth(account)}</nav>${content}</main></body></html>`;
 }
 
