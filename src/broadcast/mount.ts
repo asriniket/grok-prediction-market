@@ -176,8 +176,13 @@ boot();
     lookahead: Number(process.env.NEWS_LOOKAHEAD ?? 2),
   });
 
+  // Listings must never be missed: poll as a second detection path alongside
+  // the SSE stream. Ten seconds is faster than any presenter needs.
+  const listingWatch = setInterval(() => void engine.pollListings().catch(() => {}), 10_000);
+
   void (async () => {
     engine.connect(log);
+    await engine.pollListings().catch(() => {});
     await engine.loadRoster().catch(() => log('roster unavailable — karma segments wait for live trades'));
     latest = { ...latest, markets: await engine.markets(), traders: engine.getTraders() };
     try {
@@ -191,6 +196,7 @@ boot();
 
   return {
     stop: () => {
+      clearInterval(listingWatch);
       director.stop();
       engine.close();
       for (const ws of clients) ws.close();

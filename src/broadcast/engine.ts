@@ -41,6 +41,10 @@ export class Engine {
   private volumes = new Map<string, number>();
   private recent: string[] = [];
   private newListings: string[] = [];
+  /** Every market id ever observed; used to spot listings without trusting
+   *  any single delivery path. */
+  private knownIds = new Set<string>();
+  private listingWatchPrimed = false;
   private swings: Array<{ marketId: string; question: string; from: number; to: number }> = [];
   private lastPrice = new Map<string, number>();
   private questions = new Map<string, string>();
@@ -119,6 +123,29 @@ export class Engine {
   /** Consume the next market created since we started watching. */
   takeNewListing(): string | undefined {
     return this.newListings.shift();
+  }
+
+  private noteListing(marketId: string): void {
+    if (!marketId || this.knownIds.has(marketId)) return;
+    this.knownIds.add(marketId);
+    if (!this.listingWatchPrimed) return; // the initial book is not news
+    this.newListings.push(marketId);
+    if (this.newListings.length > 5) this.newListings.shift();
+  }
+
+  /**
+   * Poll-based listing watch: a light fetch of market ids, diffed against
+   * everything seen so far. SSE announces listings too, but a broadcast that
+   * exists to cover fresh tweets cannot depend on one delivery path — this
+   * catches anything the stream misses within ten seconds. First call primes
+   * the known set so a restart never treats the whole book as breaking news.
+   */
+  async pollListings(): Promise<void> {
+    const res = await fetch(`${this.base}/api/markets?limit=50`).catch(() => undefined);
+    if (!res?.ok) return;
+    const body = (await res.json().catch(() => undefined)) as { markets?: Snapshot[] } | undefined;
+    for (const s of body?.markets ?? []) this.noteListing(s.market.id);
+    this.listingWatchPrimed = true;
   }
 
   private note(line: string) {
@@ -241,10 +268,7 @@ export class Engine {
 
     if (type === 'market.created') {
       this.note(`New listing ${marketId}`);
-      if (marketId) {
-        this.newListings.push(marketId);
-        if (this.newListings.length > 5) this.newListings.shift();
-      }
+      this.noteListing(marketId);
       return;
     }
 
