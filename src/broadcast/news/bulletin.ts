@@ -270,7 +270,9 @@ export async function writeBeats(
         segment: segmentId,
         // The segment declares how many beats earn a video render, counted from
         // the front — 'all' for the marquee segments, a small count elsewhere.
-        onCamera: seg.onCameraBeats === 'all' ? true : i < seg.onCameraBeats,
+        // voLead forces beat 1 to instant voice-over: breaking coverage airs
+        // in seconds while the later on-camera beats render behind it.
+        onCamera: (seg.onCameraBeats === 'all' ? true : i < seg.onCameraBeats) && !(seg.voLead && i === 0),
         wire: wire?.items,
         scene: b.scene ? String(b.scene).trim() || undefined : undefined,
         strap: b.strap ? String(b.strap).trim() || undefined : undefined,

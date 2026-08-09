@@ -35,6 +35,13 @@ export const config = {
    * the spend kill-switch for voice-over-only rehearsal runs.
    */
   videoEnabled: opt('NEWS_VIDEO', '1') === '1',
+  /**
+   * Demo priority mode (NEWS_PRIORITY=tweets): the channel idles on the
+   * board with occasional voice-over segments and spends video ONLY when a
+   * new market lists from a fresh post — which it covers immediately.
+   * Built for showing judges the reply-to-broadcast loop live.
+   */
+  demoPriority: opt('NEWS_PRIORITY', '') === 'tweets',
 } as const;
 
 export function requireXaiKey(): string {

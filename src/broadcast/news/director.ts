@@ -24,7 +24,7 @@ export type NewsSegment =
   | { kind: 'beat'; at: number; line: string; speaker: string; treatment: string; kicker: string; segment: string; marketId?: string; videoUrl?: string; audioPath?: string; seconds: number; wire?: Array<{ source: string; text: string }>; strap?: string }
   | { kind: 'board'; at: number; markets: MarketLine[]; holdMs: number }
   | { kind: 'sting'; at: number; segment: string; badge: string; holdMs: number }
-  | { kind: 'breaking'; at: number; line: string; marketId: string; from: number; to: number; audioPath?: string; seconds?: number }
+  | { kind: 'breaking'; at: number; line: string; marketId: string; from: number; to: number; audioPath?: string; seconds?: number; listing?: boolean; question?: string }
   | { kind: 'preload'; at: number; videoUrl?: string; audioPath?: string };
 
 export type NewsDirectorOptions = {
@@ -33,6 +33,8 @@ export type NewsDirectorOptions = {
   getRecent: () => string[];
   /** Consumes the next unreported swing. Drives breaking interrupts. */
   takeSwing?: () => { marketId: string; question: string; from: number; to: number } | undefined;
+  /** Consumes the next just-created market. Drives new-listing coverage. */
+  takeNewListing?: () => string | undefined;
   onSegment: (s: NewsSegment) => void;
   onLog?: (m: string) => void;
   /** Segments prepared ahead of air. */
@@ -45,6 +47,10 @@ export type NewsDirectorOptions = {
  */
 const BOARD_HOLD_MS = 12_000;
 const STING_HOLD_MS = 2_200;
+/** Demo priority: the calm holding pattern between fresh tweets — cheap
+ *  voice-over segments spaced out over the board, no video spend. */
+const DEMO_IDLE: SegmentId[] = ['tape', 'forecast'];
+const DEMO_IDLE_GAP_MS = 150_000;
 /**
  * Breaking is an interrupt, not a format. The book moves constantly — demo
  * flow alone can clear the swing threshold several times a minute — so
@@ -66,6 +72,10 @@ export class NewsDirector {
   private said = new Set<string>();
   private seq = 0;
   private rot = 0;
+  private lastDemoAir = 0;
+  /** One tweet gets covered at a time: the next listing waits in the engine's
+   *  queue until the current listing segment has fully aired. */
+  private coveringListing = false;
 
   constructor(private readonly opts: NewsDirectorOptions) {}
 
@@ -91,8 +101,12 @@ export class NewsDirector {
     const log = this.opts.onLog ?? (() => {});
 
     try {
-      const id = RUNDOWN[this.rot % RUNDOWN.length]!;
-      const next = RUNDOWN[(this.rot + 1) % RUNDOWN.length]!;
+      // Demo priority idles on a slim voice-over rotation, well spaced — the
+      // board and the bed carry the air until a fresh tweet takes it.
+      const rundown = config.demoPriority ? DEMO_IDLE : RUNDOWN;
+      if (config.demoPriority && Date.now() - this.lastDemoAir < DEMO_IDLE_GAP_MS) return;
+      const id = rundown[this.rot % rundown.length]!;
+      const next = rundown[(this.rot + 1) % rundown.length]!;
       this.rot++;
 
       // A trader profile with no traders is an empty board and a beat about
@@ -130,55 +144,110 @@ export class NewsDirector {
       const onCam = config.videoEnabled ? fresh.filter((b) => b.onCamera).length : 0;
       log(`prepared ${id} — ${fresh.length} beats (${config.videoEnabled ? `${onCam} on camera` : 'voice-over only'})`);
 
-      // Consecutive takes of the same speaker alternate framing, so back-to-back
-      // clips cut like a camera switch instead of jump-cutting.
-      const takes = new Map<string, number>();
-      // Marquee segments run takes longer than one render allows; the overflow
-      // is produced as a seamless video extension of the base take.
-      const extendSeconds = Math.max(0, (SEGMENTS[id].takeSeconds ?? ANCHOR_SECONDS) - ANCHOR_SECONDS);
-      const lane = SEGMENTS[id].lane ?? 'studio';
-      const prepared: PreparedBeat[] = fresh.map((beat) => {
-        const take = takes.get(beat.speaker) ?? 0;
-        takes.set(beat.speaker, take + 1);
-        const shot: Shot = take % 2 === 0 ? 'medium' : 'close';
-        const media: Promise<Media> =
-          // PACKAGE: the reporter's voice track over generated b-roll — both
-          // render in parallel; the track's length runs the beat and the
-          // b-roll loops under it. If the pictures fail, the track still airs.
-          lane === 'package'
-            ? Promise.all([
-                renderVoiceover(beat.line, `b${++this.seq}`, beat.speaker),
-                beat.scene && config.videoEnabled
-                  ? generateSceneClip(beat.scene, { seconds: 10 }).catch(() => undefined)
-                  : Promise.resolve(undefined),
-              ]).then(([vo, clip]) => ({ audioPath: vo.audioPath, videoUrl: clip?.videoUrl, seconds: vo.seconds }))
-            // SCENE: a one-off character speaks the line in their own clip.
-            : lane === 'scene' && beat.scene && config.videoEnabled
-              ? generateSceneClip(beat.scene, { dialogue: beat.line, seconds: 10 }).then((c) => ({ videoUrl: c.videoUrl, seconds: c.seconds }))
-              : beat.onCamera && config.videoEnabled
-                ? generateSpeakerClip(beat.speaker, beat.line, {
-                    shot,
-                    extendSeconds,
-                    // Anchors share one desk: their beats render from the
-                    // two-shot so both hosts stay in frame together.
-                    desk: SEGMENTS[id].deskShot === true && (beat.speaker === 'anchor' || beat.speaker === 'cohost'),
-                  }).then((c) => ({ videoUrl: c.videoUrl, seconds: c.seconds }))
-                : renderVoiceover(beat.line, `b${++this.seq}`, beat.speaker).then((v) => ({ audioPath: v.audioPath, seconds: v.seconds }));
-        const pb: PreparedBeat = { beat, media };
-        // As soon as a render lands, remember it and tell every viewer to warm
-        // their cache — air time is not the moment to start a download.
-        void media.then((m) => {
-          pb.ready = m;
-          this.opts.onSegment({ kind: 'preload', at: Date.now(), videoUrl: m.videoUrl, audioPath: m.audioPath });
-        }).catch(() => {});
-        return pb;
-      });
-
-      this.queue.push({ id, badge: SEGMENTS[id].badge, beats: prepared });
+      this.queue.push({ id, badge: SEGMENTS[id].badge, beats: this.renderPlan(id, fresh) });
+      if (config.demoPriority) this.lastDemoAir = Date.now();
     } catch (err) {
       log(`prepare failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       this.preparing = false;
+    }
+  }
+
+  /** Turn written beats into rendering media, lane by lane. */
+  private renderPlan(id: SegmentId, fresh: Beat[]): PreparedBeat[] {
+    // Consecutive takes of the same speaker alternate framing, so back-to-back
+    // clips cut like a camera switch instead of jump-cutting.
+    const takes = new Map<string, number>();
+    // Marquee segments run takes longer than one render allows; the overflow
+    // is produced as a seamless video extension of the base take.
+    const extendSeconds = Math.max(0, (SEGMENTS[id].takeSeconds ?? ANCHOR_SECONDS) - ANCHOR_SECONDS);
+    const lane = SEGMENTS[id].lane ?? 'studio';
+    // In demo priority, video spend is reserved for fresh-tweet coverage.
+    const videoOk = config.videoEnabled && (!config.demoPriority || id === 'new_listing');
+    return fresh.map((beat) => {
+      const take = takes.get(beat.speaker) ?? 0;
+      takes.set(beat.speaker, take + 1);
+      const shot: Shot = take % 2 === 0 ? 'medium' : 'close';
+      const media: Promise<Media> =
+        // PACKAGE: the reporter's voice track over generated b-roll — both
+        // render in parallel; the track's length runs the beat and the
+        // b-roll loops under it. If the pictures fail, the track still airs.
+        lane === 'package'
+          ? Promise.all([
+              renderVoiceover(beat.line, `b${++this.seq}`, beat.speaker),
+              beat.scene && videoOk
+                ? generateSceneClip(beat.scene, { seconds: 10 }).catch(() => undefined)
+                : Promise.resolve(undefined),
+            ]).then(([vo, clip]) => ({ audioPath: vo.audioPath, videoUrl: clip?.videoUrl, seconds: vo.seconds }))
+          // SCENE: a one-off character speaks the line in their own clip.
+          : lane === 'scene' && beat.scene && videoOk
+            ? generateSceneClip(beat.scene, { dialogue: beat.line, seconds: 10 }).then((c) => ({ videoUrl: c.videoUrl, seconds: c.seconds }))
+            : beat.onCamera && videoOk
+              ? generateSpeakerClip(beat.speaker, beat.line, {
+                  shot,
+                  extendSeconds,
+                  // Anchors share one desk: their beats render from the
+                  // two-shot so both hosts stay in frame together.
+                  desk: SEGMENTS[id].deskShot === true && (beat.speaker === 'anchor' || beat.speaker === 'cohost'),
+                }).then((c) => ({ videoUrl: c.videoUrl, seconds: c.seconds }))
+              : renderVoiceover(beat.line, `b${++this.seq}`, beat.speaker).then((v) => ({ audioPath: v.audioPath, seconds: v.seconds }));
+      const pb: PreparedBeat = { beat, media };
+      // As soon as a render lands, remember it and tell every viewer to warm
+      // their cache — air time is not the moment to start a download.
+      void media.then((m) => {
+        pb.ready = m;
+        this.opts.onSegment({ kind: 'preload', at: Date.now(), videoUrl: m.videoUrl, audioPath: m.audioPath });
+      }).catch(() => {});
+      return pb;
+    });
+  }
+
+  /**
+   * Full-priority coverage of a market created seconds ago: an instant
+   * breaking flash with voice-over (seconds, not minutes), then a focused
+   * segment jumped to the front of the queue while its video renders.
+   */
+  private async coverListing(marketId: string): Promise<void> {
+    const log = this.opts.onLog ?? (() => {});
+    try {
+      const markets = this.withDeltas(await this.opts.getMarkets());
+      const m = markets.find((x) => x.id === marketId);
+      const line = m
+        ? `Breaking on the tape — a brand-new contract just listed. ${m.question.slice(0, 110)} It opens at ${(m.price * 100).toFixed(0)} percent, straight off a post from @${m.sourceHandle}.`
+        : 'Breaking on the tape — a brand-new contract just listed.';
+      const flash = {
+        kind: 'breaking' as const,
+        at: Date.now(),
+        line,
+        marketId,
+        from: m?.price ?? 0.5,
+        to: m?.price ?? 0.5,
+        listing: true,
+        question: m?.question,
+      };
+      this.opts.onSegment(flash);
+      try {
+        const vo = await renderVoiceover(line, `nl${++this.seq}`, 'anchor');
+        this.opts.onSegment({ ...flash, at: Date.now(), audioPath: vo.audioPath, seconds: vo.seconds });
+        await sleep(vo.seconds * 1000 + 400);
+      } catch {
+        await sleep(3000);
+      }
+
+      // The fresh market leads the book so the writer covers IT.
+      const focused = m ? [m, ...markets.filter((x) => x.id !== marketId)] : markets;
+      const beats = await writeBeats('new_listing', focused, this.opts.getTraders(), this.opts.getRecent(), [...this.said], undefined);
+      if (beats.length === 0) {
+        log('new_listing: writer returned nothing');
+        this.coveringListing = false;
+        return;
+      }
+      for (const b of beats) this.said.add(NewsDirector.norm(b.line));
+      this.queue.unshift({ id: 'new_listing', badge: SEGMENTS.new_listing.badge, beats: this.renderPlan('new_listing', beats) });
+      log(`covering new listing ${marketId}`);
+    } catch (err) {
+      log(`listing coverage failed: ${err instanceof Error ? err.message : err}`);
+      this.coveringListing = false;
     }
   }
 
@@ -208,6 +277,17 @@ export class NewsDirector {
     let lastBreaking = 0;
     while (!this.stopped) {
       void this.prepare(lookahead);
+
+      // A market created seconds ago outranks everything — but one at a time:
+      // the next listing waits until the current one's coverage fully airs.
+      if (!this.coveringListing) {
+        const listing = this.opts.takeNewListing?.();
+        if (listing) {
+          this.coveringListing = true;
+          await this.coverListing(listing);
+          continue;
+        }
+      }
 
       // A real swing pre-empts the rundown. The interrupt is caused by the book
       // moving rather than by a timer, which is what makes it read as live —
@@ -275,6 +355,8 @@ export class NewsDirector {
         // Rapid segments cut hard; everything else gets a beat to breathe.
         await sleep(m.seconds * 1000 + (beat.treatment === 'rapid' ? 150 : 450));
       }
+      // Coverage complete — the door opens for the next fresh tweet.
+      if (seg.id === 'new_listing') this.coveringListing = false;
     }
   }
 }

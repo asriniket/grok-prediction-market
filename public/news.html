@@ -921,10 +921,17 @@ function showSting(name,at){
 }
 
 function showBreaking(s){
-  $('brkLine').textContent=s.line;
-  const up=s.to>s.from;
-  $('brkMove').innerHTML=`<span class="${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs((s.to-s.from)*100).toFixed(0)} pts</span>
-    <span class="flat">${(s.from*100).toFixed(1)} → ${(s.to*100).toFixed(1)}</span>`;
+  // A just-listed market gets its own framing: the claim and the opening
+  // price, not a movement arrow pointing at nothing.
+  document.querySelector('#brk .band .t').textContent=s.listing?'NEW MARKET · JUST LISTED':'BREAKING NEWS';
+  $('brkLine').textContent=s.listing&&s.question?s.question:s.line;
+  if(s.listing){
+    $('brkMove').innerHTML=`<span class="up">OPENS AT ${(s.to*100).toFixed(1)}</span>`;
+  } else {
+    const up=s.to>s.from;
+    $('brkMove').innerHTML=`<span class="${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs((s.to-s.from)*100).toFixed(0)} pts</span>
+      <span class="flat">${(s.from*100).toFixed(1)} → ${(s.to*100).toFixed(1)}</span>`;
+  }
   $('brk').classList.add('on');
   breakSound();
   if(s.audioPath){ playVO(s.audioPath,s.at); setTimeout(()=>$('brk').classList.remove('on'),(s.seconds||5)*1000+600); }

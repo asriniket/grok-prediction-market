@@ -40,6 +40,7 @@ export class Engine {
   private learning = new Set<string>();
   private volumes = new Map<string, number>();
   private recent: string[] = [];
+  private newListings: string[] = [];
   private swings: Array<{ marketId: string; question: string; from: number; to: number }> = [];
   private lastPrice = new Map<string, number>();
   private questions = new Map<string, string>();
@@ -113,6 +114,11 @@ export class Engine {
 
   takeSwing() {
     return this.swings.shift();
+  }
+
+  /** Consume the next market created since we started watching. */
+  takeNewListing(): string | undefined {
+    return this.newListings.shift();
   }
 
   private note(line: string) {
@@ -235,6 +241,10 @@ export class Engine {
 
     if (type === 'market.created') {
       this.note(`New listing ${marketId}`);
+      if (marketId) {
+        this.newListings.push(marketId);
+        if (this.newListings.length > 5) this.newListings.shift();
+      }
       return;
     }
 

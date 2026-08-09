@@ -170,6 +170,7 @@ boot();
     getTraders: () => engine.getTraders(),
     getRecent: () => engine.getRecent(),
     takeSwing: () => engine.takeSwing(),
+    takeNewListing: () => engine.takeNewListing(),
     onSegment: push,
     onLog: log,
     lookahead: Number(process.env.NEWS_LOOKAHEAD ?? 2),

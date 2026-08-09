@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { xai } from '../xai/rest.js';
 import { config } from '../config.js';
@@ -131,7 +132,11 @@ export async function generateSceneClip(
   scene: string,
   opts: { dialogue?: string; seconds?: number } = {},
 ): Promise<AnchorClip> {
-  const seconds = Math.min(15, Math.max(4, opts.seconds ?? 10));
+  // Dialogue scenes budget from the words like any take; b-roll keeps its
+  // requested length (ambient sound would false-trigger silence trimming).
+  const seconds = opts.dialogue
+    ? fitSeconds(opts.dialogue, Math.min(15, opts.seconds ?? 15), 5)
+    : Math.min(15, Math.max(4, opts.seconds ?? 10));
   const started = Date.now();
   const prompt = opts.dialogue
     ? `${scene}. The person speaks directly to an off-camera interviewer, natural and unpolished, with accurate lip sync: "${opts.dialogue}" Handheld news-camera framing, natural ambient sound. A fictional person — not a real or identifiable person. Generic unbranded location, no logos, no readable signage, no on-screen text or captions.`
@@ -144,7 +149,79 @@ export async function generateSceneClip(
   const id = submitted.request_id ?? submitted.id;
   if (!id) throw new Error('no request_id for scene clip');
   const url = await pollVideo(id, 'scene clip');
-  return { videoUrl: url, line: opts.dialogue ?? '', seconds, renderMs: Date.now() - started };
+  if (opts.dialogue) {
+    const fin = await finishClip(url, seconds, 'scene take');
+    return { videoUrl: fin.videoUrl, line: opts.dialogue, seconds: fin.seconds, renderMs: Date.now() - started };
+  }
+  return { videoUrl: url, line: '', seconds, renderMs: Date.now() - started };
+}
+
+/**
+ * Right-size a take: renders always fill their full requested duration, so a
+ * 15s request carrying 10s of copy ends with the presenter sitting in silence
+ * — dead air on screen and paid seconds in the render bill. Budget from the
+ * words (2.4 spoken words/sec, one second of headroom) instead of a constant.
+ */
+export const fitSeconds = (text: string, cap: number, floor = 6): number =>
+  Math.max(floor, Math.min(cap, Math.ceil(text.trim().split(/\s+/).length / 2.4) + 1));
+
+function runTool(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolvePromise, reject) => {
+    const p = spawn(cmd, args);
+    let out = '';
+    p.stdout.on('data', (d) => (out += d));
+    p.stderr.on('data', (d) => (out += d));
+    p.on('error', reject);
+    p.on('close', () => resolvePromise(out));
+  });
+}
+
+const CLIP_DIR = resolve(process.cwd(), 'public/media/clips');
+let finishedSeq = 0;
+
+/**
+ * Finish a render for air: pull it local and cut the trailing dead air.
+ * Even right-sized takes finish their copy early sometimes; whatever silence
+ * survives at the tail gets trimmed here, and the director paces the beat by
+ * the clip's REAL length. Falls back to the untrimmed remote render if
+ * ffmpeg is unavailable, so this is polish, never a dependency.
+ */
+async function finishClip(remoteUrl: string, requested: number, label: string): Promise<{ videoUrl: string; seconds: number }> {
+  try {
+    const bytes = Buffer.from(await (await fetch(remoteUrl)).arrayBuffer());
+    mkdirSync(CLIP_DIR, { recursive: true });
+    const id = `t${(++finishedSeq).toString(36)}${Date.now().toString(36)}`;
+    const src = resolve(CLIP_DIR, `${id}-src.mp4`);
+    writeFileSync(src, bytes);
+
+    const duration = parseFloat(await runTool('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', src])) || requested;
+    const detect = await runTool('ffmpeg', ['-hide_banner', '-nostats', '-i', src, '-af', 'silencedetect=noise=-38dB:d=0.7', '-f', 'null', '-']);
+    const starts = [...detect.matchAll(/silence_start: ([0-9.]+)/g)].map((m) => parseFloat(m[1]!));
+    const ends = [...detect.matchAll(/silence_end: ([0-9.]+)/g)].map((m) => parseFloat(m[1]!));
+
+    // The cut point is the start of a final silence that runs to end of file.
+    let speechEnd = duration;
+    if (starts.length > 0) {
+      const lastStart = starts[starts.length - 1]!;
+      const lastClosed = ends.length > 0 && ends[ends.length - 1]! > lastStart && ends[ends.length - 1]! < duration - 0.15;
+      if (!lastClosed) speechEnd = lastStart;
+    }
+    const cutAt = Math.min(duration, speechEnd + 0.35);
+
+    if (duration - cutAt < 0.8) {
+      const keep = resolve(CLIP_DIR, `${id}.mp4`);
+      renameSync(src, keep);
+      return { videoUrl: `/live/media/clips/${id}.mp4`, seconds: duration };
+    }
+    const out = resolve(CLIP_DIR, `${id}.mp4`);
+    await runTool('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', src, '-t', cutAt.toFixed(2), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', '-movflags', '+faststart', '-y', out]);
+    unlinkSync(src);
+    console.log(`[live] trimmed ${label}: ${duration.toFixed(1)}s -> ${cutAt.toFixed(1)}s`);
+    return { videoUrl: `/live/media/clips/${id}.mp4`, seconds: cutAt };
+  } catch (err) {
+    console.log(`[live] clip finishing skipped (${label}): ${err instanceof Error ? err.message : err}`);
+    return { videoUrl: remoteUrl, seconds: requested };
+  }
 }
 
 async function pollVideo(id: string, label: string, timeoutMs = 420_000): Promise<string> {
@@ -193,13 +270,19 @@ export async function generateSpeakerClip(
   line: string,
   opts: { seconds?: number; shot?: Shot; extendSeconds?: number; desk?: boolean } = {},
 ): Promise<AnchorClip> {
-  const baseSeconds = opts.seconds ?? ANCHOR_SECONDS;
-  const extendSeconds = Math.max(0, Math.min(15, opts.extendSeconds ?? 0));
   const shot = opts.shot ?? 'medium';
   const started = Date.now();
 
-  const [head, tail] =
-    extendSeconds > 0 ? splitForExtension(line, baseSeconds / (baseSeconds + extendSeconds)) : [line, ''];
+  // Budget the take from the copy, capped by the segment's ceiling. An
+  // extension render happens only when the words genuinely need more than
+  // one render can hold — short copy gets one short render, not 15 fixed
+  // seconds plus a silent stare.
+  const ceiling = (opts.seconds ?? ANCHOR_SECONDS) + Math.max(0, Math.min(15, opts.extendSeconds ?? 0));
+  const total = fitSeconds(line, ceiling);
+  const baseSeconds = Math.min(total, 15);
+  const extendSeconds = total > 15 ? Math.max(5, Math.min(15, total - 15)) : 0;
+
+  const [head, tail] = extendSeconds > 0 ? splitForExtension(line, baseSeconds / total) : [line, ''];
 
   const setup = opts.desk
     ? { url: loadDeskReference().url, prompt: deskPrompt(head, speaker, shot) }
@@ -214,7 +297,10 @@ export async function generateSpeakerClip(
   if (!id) throw new Error(`no request_id for ${speaker} clip`);
   const baseUrl = await pollVideo(id, `${speaker} clip`);
 
-  if (!tail) return { videoUrl: baseUrl, line, seconds: baseSeconds, renderMs: Date.now() - started };
+  if (!tail) {
+    const fin = await finishClip(baseUrl, baseSeconds, `${speaker} take`);
+    return { videoUrl: fin.videoUrl, line, seconds: fin.seconds, renderMs: Date.now() - started };
+  }
 
   // Extended take: continue the same shot with the rest of the copy. If the
   // extension fails, the base take still airs — a shorter beat, not a hole.
@@ -228,12 +314,14 @@ export async function generateSpeakerClip(
     const extId = ext.request_id ?? ext.id;
     if (!extId) throw new Error('no request_id for extension');
     const fullUrl = await pollVideo(extId, `${speaker} extension`);
-    return { videoUrl: fullUrl, line, seconds: baseSeconds + extendSeconds, renderMs: Date.now() - started };
+    const fin = await finishClip(fullUrl, baseSeconds + extendSeconds, `${speaker} extended take`);
+    return { videoUrl: fin.videoUrl, line, seconds: fin.seconds, renderMs: Date.now() - started };
   } catch (err) {
     // The shorter base take airs instead — but say so, loudly, or a broken
     // extensions endpoint would masquerade as a stylistic choice.
     console.log(`[live] extension fell back to base take: ${err instanceof Error ? err.message : err}`);
-    return { videoUrl: baseUrl, line, seconds: baseSeconds, renderMs: Date.now() - started };
+    const fin = await finishClip(baseUrl, baseSeconds, `${speaker} take`);
+    return { videoUrl: fin.videoUrl, line, seconds: fin.seconds, renderMs: Date.now() - started };
   }
 }
 

@@ -41,7 +41,7 @@ export type Treatment =
 export type SegmentId =
   | 'show_open' | 'tape' | 'karma_check' | 'long_shot' | 'origin'
   | 'the_room' | 'reality_check' | 'field_report' | 'street_voice'
-  | 'forecast'
+  | 'forecast' | 'new_listing'
   | 'crossfire' | 'final_trades' | 'lightning' | 'resolution_watch' | 'tease';
 
 /**
@@ -80,6 +80,9 @@ export type SegmentDef = {
   speakerRule?: string;
   /** Anchor/cohost beats render from the shared-desk two-shot. */
   deskShot?: boolean;
+  /** Beat 1 airs as instant voice-over even when later beats go on camera —
+   *  breaking coverage cannot wait minutes for a video render. */
+  voLead?: boolean;
   /**
    * Live research before writing: 'x' pulls real posts via x_search, 'web'
    * pulls fresh reporting via web_search. The pulled items air on screen and
@@ -284,6 +287,17 @@ Their balance was not bought — it derives from how long their account has exis
     beats: 2,
     onCameraBeats: 'all',
     brief: `The resolution outlook, delivered as weather. The calendar board is on screen beside you. Beat 1: the near-term system — what settles soonest, current conditions on it, and how confident the book is in its own sky. Beat 2: the extended outlook — the next two or three fronts on the calendar, one clause each, then the packing advice: which side a sensible viewer holds into the weekend. Never break the weather frame.`,
+  },
+
+  new_listing: {
+    id: 'new_listing',
+    badge: 'Just listed',
+    speakers: ['anchor'],
+    treatment: 'quote',
+    beats: 3,
+    onCameraBeats: 3,
+    voLead: true,
+    brief: `BREAKING coverage of a market that listed SECONDS ago — it is the FIRST contract in the book data you were given. Beat 1: urgent and immediate — someone just posted, and the book already has odds on it; name the handle, characterise the claim, give the opening price. Beat 2: what would make this resolve YES, and who you expect to take each side. Beat 3: your dry read on whether the opening price is right. This is the fastest segment on the channel — momentum over polish.`,
   },
 
   crossfire: {
