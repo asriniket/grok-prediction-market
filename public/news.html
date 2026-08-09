@@ -391,14 +391,25 @@ function tone(freq,at,dur,type,gain,glideTo){
    stream never goes dead silent. Synthesis over a music file: nothing to
    license, nothing to load, and the encoder captures it like any page audio. */
 const bed={gain:null,lp:null,timer:null,step:0,next:0,target:0,noise:null};
-const BED_CHORDS=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
 const mtof=(m)=>440*Math.pow(2,(m-69)/12);
-function bedTone(f,t,d,type,g,att){
-  const c=ac(),o=c.createOscillator(),gn=c.createGain();
-  o.type=type;o.frequency.value=f;
+function bedTone(f,t,d,type,g,att,detune){
+  const c=ac(),gn=c.createGain();
   gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(g,t+(att||0.012));
   gn.gain.exponentialRampToValueAtTime(0.001,t+d);
-  o.connect(gn);gn.connect(bed.gain);o.start(t);o.stop(t+d+0.1);
+  gn.connect(bed.gain);
+  const oscs=detune?[0,detune]:[0];
+  for(const dt of oscs){
+    const o=c.createOscillator();o.type=type;o.frequency.value=f*(1+dt);
+    o.connect(gn);o.start(t);o.stop(t+d+0.1);
+  }
+}
+/** Timpani-style boom: a pitched drop, the downbeat of television news. */
+function bedBoom(t,g){
+  const c=ac(),o=c.createOscillator(),gn=c.createGain();
+  o.type='sine';o.frequency.setValueAtTime(115,t);
+  o.frequency.exponentialRampToValueAtTime(46,t+0.32);
+  gn.gain.setValueAtTime(g,t);gn.gain.exponentialRampToValueAtTime(0.001,t+0.75);
+  o.connect(gn);gn.connect(bed.gain);o.start(t);o.stop(t+0.85);
 }
 /** Soft filtered-noise tick — the hi-hat of the news pulse. */
 function bedTick(t,g){
@@ -414,15 +425,32 @@ function bedTick(t,g){
   const gn=c.createGain();gn.gain.setValueAtTime(g,t);
   src.connect(bp);bp.connect(gn);gn.connect(bed.gain);src.start(t);
 }
-/** Rolling-news pattern: driving 16th arp, syncopated bass, tick, airy pad. */
+/**
+ * The grammar of a news theme, synthesized: a teletype pulse riding every
+ * 16th, staccato bass eighths, brassy QUARTAL stabs (stacked fourths) in a
+ * dotted rhythm, a timpani boom opening each 4-bar phrase, and a rising
+ * fanfare in the final bar. One A-minor pedal — urgency, not a pop loop.
+ */
+const BED_STABS=[[57,62,67],[57,62,67],[55,60,65],[52,57,62]];
 function bedStep(t,s){
-  const chord=BED_CHORDS[Math.floor(s/16)%4];
-  if(s%8===0||s%8===6) bedTone(mtof(chord[0]-24),t,0.8,'sine',0.55);
-  const pat=[0,1,2,1, 0,2,1,2, 0,1,2,0, 1,2,0,2];
-  const oct=(s%16>=12)?12:0;
-  bedTone(mtof(chord[pat[s%16]]+oct),t,0.16,'triangle',0.5);
-  if(s%4===2) bedTick(t,0.10);
-  if(s%16===0) chord.forEach(n=>bedTone(mtof(n),t,3.4,'sawtooth',0.06,1.2));
+  const bar=Math.floor(s/16)%4;
+  // teletype: the wire never stops
+  bedTone(mtof(81),t,0.055,'triangle',s%4===0?0.20:0.10);
+  // staccato bass eighths on the A pedal, octave kick into each bar turn
+  if(s%2===0) bedTone(mtof(s%16===14?57:45),t,0.11,'sawtooth',0.34);
+  // dotted brass stabs: downbeat, and the echo on the "and of 2"
+  if(s%16===0) BED_STABS[bar].forEach(n=>bedTone(mtof(n),t,0.34,'sawtooth',0.20,0.012,0.006));
+  if(s%16===6) BED_STABS[bar].forEach(n=>bedTone(mtof(n),t,0.20,'sawtooth',0.11,0.012,0.006));
+  // rising fanfare through the last bar: A - D - E - A
+  if(bar===3){
+    if(s%16===0) bedTone(mtof(69),t,0.30,'sawtooth',0.26,0.012,0.007);
+    if(s%16===3) bedTone(mtof(74),t,0.30,'sawtooth',0.26,0.012,0.007);
+    if(s%16===6) bedTone(mtof(76),t,0.30,'sawtooth',0.26,0.012,0.007);
+    if(s%16===9) bedTone(mtof(81),t,0.62,'sawtooth',0.30,0.012,0.007);
+  }
+  if(s===0) bedBoom(t,0.85);
+  if(s%4===2) bedTick(t,0.09);
+  if(s%16===12) bedTick(t,0.06);
 }
 function bedStart(){
   if(bed.gain||!soundOn)return;
@@ -431,7 +459,7 @@ function bedStart(){
   bed.lp=c.createBiquadFilter();bed.lp.type='lowpass';bed.lp.frequency.value=2400;
   bed.gain.connect(bed.lp);bed.lp.connect(c.destination);
   bed.next=c.currentTime+0.15;bed.step=0;
-  const spb=60/104/4;   // 16ths at 104 BPM
+  const spb=60/116/4;   // 16ths at a newsroom 116 BPM
   bed.timer=setInterval(()=>{
     const now=ac().currentTime;
     while(bed.next<now+0.35){bedStep(bed.next,bed.step);bed.next+=spb;bed.step=(bed.step+1)%64;}
