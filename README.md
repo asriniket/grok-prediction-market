@@ -72,22 +72,21 @@ The OAuth callback saves bot tokens in the configured Postgres database for the
 hackathon. For a production deployment, move refresh tokens to encrypted
 persistent storage in a managed secret store.
 
-### Optional: instant X mention delivery
+### Instant X mention delivery
 
-Polling is the fallback. To have X deliver mentions directly to Threadline,
-configure the V2 Account Activity API with the public endpoint
-`https://YOUR_APP/webhooks/x`. Set `X_CONSUMER_SECRET` to the app's
-Consumer/API Secret (not its OAuth client secret). The endpoint responds to
-X's CRC validation and verifies every `x-twitter-webhooks-signature` before
-accepting an event. It acknowledges promptly, then uses the same idempotent
-mention flow as polling to open and reply to markets.
+Threadline uses X Activity's current `post.mention.create` event rather than
+the deprecated Account Activity API. Set `X_CONSUMER_SECRET` to the app's
+Consumer/API Secret (not its OAuth client secret), then register
+`https://YOUR_APP/webhooks/x`. The endpoint responds to X's CRC validation,
+verifies every `x-twitter-webhooks-signature`, and immediately queues the same
+idempotent market-opening flow used by polling.
 
-Webhook registration and bot-user subscription are X developer-console/API
-operations and require Account Activity API access. The V2 Account Activity
-API is currently offered on Pay Per Use and Enterprise tiers. X requires a
-public HTTPS endpoint, and its registration request returns the `webhook_id`
-needed for the bot subscription. Keep polling enabled until X reports both the
-webhook and subscription as valid; the processing table makes overlap safe.
+After registration returns a `webhook_id`, create one X Activity subscription
+for the bot's numeric user ID and event type `post.mention.create`, attaching
+that `webhook_id`. This private mention event requires the bot's OAuth 2.0
+user-context token with `tweet.read`; the OAuth flow used by `/auth/x/start`
+already requests that scope. No polling schedule is needed after the webhook
+and subscription are valid.
 
 ## Market design
 

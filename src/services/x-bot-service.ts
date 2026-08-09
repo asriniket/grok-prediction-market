@@ -5,7 +5,7 @@ import type { MarketStore } from "../infrastructure/store.js";
 import { XApiClient } from "../integrations/x-client.js";
 import { BotRegistry } from "../integrations/x-oauth.js";
 import { MarketService } from "./market-service.js";
-import { accountActivityMentions } from "./x-webhook.js";
+import { xWebhookMentions } from "./x-webhook.js";
 
 const COMMAND = /\bmarket\s+this\b/i;
 
@@ -66,7 +66,7 @@ export class XBotService {
   acceptAccountActivity(payload: unknown): { configured: boolean; accepted: number } {
     const bot = this.bots.get();
     if (!bot) return { configured: false, accepted: 0 };
-    const mentions = accountActivityMentions(payload, bot.userId);
+    const mentions = xWebhookMentions(payload, bot.userId);
     const client = new XApiClient(bot.accessToken);
     for (const mention of mentions) {
       queueMicrotask(() => {

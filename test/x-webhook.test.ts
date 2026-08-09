@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import { createApp, type AppDependencies } from "../src/app.js";
-import { accountActivityMentions, crcResponseToken, hasValidWebhookSignature } from "../src/services/x-webhook.js";
+import { crcResponseToken, hasValidWebhookSignature, xWebhookMentions } from "../src/services/x-webhook.js";
 
-describe("X Account Activity webhook helpers", () => {
+describe("X webhook helpers", () => {
   it("creates the documented CRC token and verifies only the exact signed bytes", () => {
     const secret = "consumer-secret";
     const crcToken = "challenge";
@@ -42,7 +42,7 @@ describe("X Account Activity webhook helpers", () => {
       ],
     };
 
-    expect(accountActivityMentions(payload, "2086271258564739072")).toEqual([
+    expect(xWebhookMentions(payload, "2086271258564739072")).toEqual([
       expect.objectContaining({ id: "2087000000000000001", authorId: "111", repliedToPostId: "2086000000000000001" }),
       expect.objectContaining({
         id: "2087000000000000002",
@@ -50,7 +50,35 @@ describe("X Account Activity webhook helpers", () => {
         text: expect.stringContaining("https://x.com/source/status/2086000000000000002"),
       }),
     ]);
-    expect(accountActivityMentions({ for_user_id: "999", tweet_create_events: payload.tweet_create_events }, "2086271258564739072")).toEqual([]);
+    expect(xWebhookMentions({ for_user_id: "999", tweet_create_events: payload.tweet_create_events }, "2086271258564739072")).toEqual([]);
+  });
+
+  it("normalizes current X Activity post.mention.create events", () => {
+    const payload = {
+      data: {
+        event_uuid: "event-1",
+        event_type: "post.mention.create",
+        filter: { user_id: "2086271258564739072" },
+        payload: {
+          id: "2087000000000000004",
+          text: "@ThreadlineBot market this",
+          author_id: "333",
+          created_at: "2026-08-09T04:00:00.000Z",
+          conversation_id: "2086000000000000003",
+          referenced_tweets: [{ type: "replied_to", id: "2086000000000000003" }],
+        },
+        includes: { users: [{ id: "333", username: "maker" }] },
+      },
+    };
+    expect(xWebhookMentions(payload, "2086271258564739072")).toEqual([
+      expect.objectContaining({
+        id: "2087000000000000004",
+        authorId: "333",
+        authorHandle: "maker",
+        repliedToPostId: "2086000000000000003",
+      }),
+    ]);
+    expect(xWebhookMentions({ data: { ...payload.data, filter: { user_id: "999" } } }, "2086271258564739072")).toEqual([]);
   });
 });
 

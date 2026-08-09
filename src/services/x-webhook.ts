@@ -41,15 +41,46 @@ function expandedXUrls(tweet: RawObject): string[] {
   });
 }
 
-/**
- * Account Activity sends a legacy Tweet-shaped payload. Normalize only the
- * fields the existing bot flow needs, and ignore bot-authored or unrelated
- * activity before any reply can be posted.
- */
-export function accountActivityMentions(payload: unknown, botUserId: string): XPost[] {
-  const root = object(payload);
-  if (!root || id(root.for_user_id) !== botUserId || !Array.isArray(root.tweet_create_events)) return [];
-  return root.tweet_create_events.flatMap((entry) => {
+function activityAuthorHandle(event: RawObject, authorId: string): string | undefined {
+  const users = object(event.includes)?.users;
+  if (!Array.isArray(users)) return undefined;
+  for (const entry of users) {
+    const user = object(entry);
+    if (id(user?.id) === authorId) return text(user?.username);
+  }
+  return undefined;
+}
+
+function activityMention(payload: RawObject, botUserId: string): XPost[] {
+  const event = object(payload.data);
+  if (!event || text(event.event_type) !== "post.mention.create") return [];
+  if (id(object(event.filter)?.user_id) !== botUserId) return [];
+  const post = object(event.payload);
+  if (!post) return [];
+  const postId = id(post.id);
+  const authorId = id(post.author_id);
+  const postText = text(post.text);
+  if (!postId || !authorId || !postText || authorId === botUserId) return [];
+  const references = Array.isArray(post.referenced_tweets) ? post.referenced_tweets : [];
+  const repliedToPostId = references
+    .map(object)
+    .find((reference) => text(reference?.type) === "replied_to")
+    ?.id;
+  const sourceLinks = expandedXUrls(post);
+  return [{
+    id: postId,
+    text: [postText, ...sourceLinks].join("\n"),
+    authorId,
+    authorHandle: activityAuthorHandle(event, authorId),
+    createdAt: text(post.created_at) ?? new Date().toISOString(),
+    conversationId: id(post.conversation_id),
+    repliedToPostId: id(repliedToPostId),
+  }];
+}
+
+function legacyAccountActivityMentions(payload: RawObject, botUserId: string): XPost[] {
+  if (id(payload.for_user_id) !== botUserId || !Array.isArray(payload.tweet_create_events)) return [];
+  return payload.tweet_create_events.flatMap((entry) => {
     const tweet = object(entry);
     if (!tweet) return [];
     const user = object(tweet.user);
@@ -68,4 +99,18 @@ export function accountActivityMentions(payload: unknown, botUserId: string): XP
       repliedToPostId: id(tweet.in_reply_to_status_id_str) ?? id(tweet.in_reply_to_status_id),
     }];
   });
+}
+
+/**
+ * X Activity is the current real-time API. Normalize its post.mention.create
+ * event into the bot's existing XPost shape. The legacy Account Activity
+ * format remains accepted while X completes that product's deprecation.
+ */
+export function xWebhookMentions(payload: unknown, botUserId: string): XPost[] {
+  const root = object(payload);
+  if (!root) return [];
+  const currentActivityMentions = activityMention(root, botUserId);
+  return currentActivityMentions.length > 0
+    ? currentActivityMentions
+    : legacyAccountActivityMentions(root, botUserId);
 }
