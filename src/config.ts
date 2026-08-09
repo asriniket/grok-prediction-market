@@ -15,7 +15,7 @@ export interface AppConfig {
   xClientId?: string;
   xClientSecret?: string;
   xRedirectUri: string;
-  xWebhookConsumerSecret?: string;
+  xConsumerSecret?: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -31,7 +31,7 @@ export function loadConfig(): AppConfig {
     xClientId: process.env.X_CLIENT_ID || undefined,
     xClientSecret: process.env.X_CLIENT_SECRET || undefined,
     xRedirectUri: process.env.X_REDIRECT_URI ?? `http://localhost:${port}/auth/x/callback`,
-    xWebhookConsumerSecret: process.env.X_WEBHOOK_CONSUMER_SECRET || undefined,
+    xConsumerSecret: process.env.X_CONSUMER_SECRET || undefined,
   };
 }
 

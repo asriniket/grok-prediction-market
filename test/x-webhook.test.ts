@@ -59,7 +59,7 @@ describe("X Account Activity webhook endpoint", () => {
     const secret = "consumer-secret";
     const acceptAccountActivity = vi.fn().mockReturnValue({ configured: true, accepted: 1 });
     const app = createApp({
-      xWebhookConsumerSecret: secret,
+      xConsumerSecret: secret,
       xBots: { acceptAccountActivity },
     } as unknown as AppDependencies);
     const server = app.listen(0);

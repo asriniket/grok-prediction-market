@@ -44,7 +44,7 @@ export interface AppDependencies {
   sessions: SessionStore;
   cronSecret?: string;
   /** X API Consumer/API Secret used only for webhook CRC and signature checks. */
-  xWebhookConsumerSecret?: string;
+  xConsumerSecret?: string;
 }
 
 interface RequestWithRawBody extends Request {
@@ -96,15 +96,15 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/health", (_request, response) => response.json({ ok: true }));
 
   app.get("/webhooks/x", asyncRoute(async (request, response) => {
-    const secret = dependencies.xWebhookConsumerSecret;
-    if (!secret) throw new AppError("Set X_WEBHOOK_CONSUMER_SECRET before registering the X webhook", 503, "WEBHOOK_NOT_CONFIGURED");
+    const secret = dependencies.xConsumerSecret;
+    if (!secret) throw new AppError("Set X_CONSUMER_SECRET before registering the X webhook", 503, "WEBHOOK_NOT_CONFIGURED");
     const crcToken = z.string().min(1).max(1_024).parse(request.query.crc_token);
     response.json({ response_token: crcResponseToken(secret, crcToken) });
   }));
 
   app.post("/webhooks/x", asyncRoute(async (request, response) => {
-    const secret = dependencies.xWebhookConsumerSecret;
-    if (!secret) throw new AppError("Set X_WEBHOOK_CONSUMER_SECRET before receiving X webhook events", 503, "WEBHOOK_NOT_CONFIGURED");
+    const secret = dependencies.xConsumerSecret;
+    if (!secret) throw new AppError("Set X_CONSUMER_SECRET before receiving X webhook events", 503, "WEBHOOK_NOT_CONFIGURED");
     const rawBody = (request as RequestWithRawBody).rawBody;
     if (!rawBody || !hasValidWebhookSignature(secret, rawBody, request.get("x-twitter-webhooks-signature"))) {
       throw new AppError("Invalid X webhook signature", 401, "INVALID_WEBHOOK_SIGNATURE");

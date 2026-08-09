@@ -76,7 +76,7 @@ persistent storage in a managed secret store.
 
 Polling is the fallback. To have X deliver mentions directly to Threadline,
 configure the V2 Account Activity API with the public endpoint
-`https://YOUR_APP/webhooks/x`. Set `X_WEBHOOK_CONSUMER_SECRET` to the app's
+`https://YOUR_APP/webhooks/x`. Set `X_CONSUMER_SECRET` to the app's
 Consumer/API Secret (not its OAuth client secret). The endpoint responds to
 X's CRC validation and verifies every `x-twitter-webhooks-signature` before
 accepting an event. It acknowledges promptly, then uses the same idempotent

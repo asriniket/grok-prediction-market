@@ -52,7 +52,7 @@ const app = createApp({
   xBots,
   sessions,
   cronSecret: config.cronSecret,
-  xWebhookConsumerSecret: config.xWebhookConsumerSecret,
+  xConsumerSecret: config.xConsumerSecret,
 });
 const demoPulse = new DemoMarketPulse(store, markets);
 demoPulse.start();
