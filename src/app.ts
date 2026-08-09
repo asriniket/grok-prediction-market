@@ -42,7 +42,7 @@ export interface AppDependencies {
   oauth: XOAuthService;
   xBots: XBotService;
   sessions: SessionStore;
-  cronSecret?: string;
+  internalJobSecret?: string;
   /** X API Consumer/API Secret used only for webhook CRC and signature checks. */
   xConsumerSecret?: string;
 }
@@ -61,13 +61,13 @@ function sessionUserId(request: Request, sessions: SessionStore): string | null 
   return sessions.getUserId(readCookie(request, "threadline_session"));
 }
 
-function requireSettlementAuthorization(request: Request, cronSecret?: string): void {
+function requireInternalJobAuthorization(request: Request, internalJobSecret?: string): void {
   // Settlement changes every holder's balance. It must never be exposed as a
   // public HTTP action, including in a local hackathon environment.
-  if (!cronSecret) {
-    throw new AppError("Set CRON_SECRET before enabling market settlement", 503, "SETTLEMENT_NOT_CONFIGURED");
+  if (!internalJobSecret) {
+    throw new AppError("Set INTERNAL_JOB_SECRET before enabling market settlement", 503, "SETTLEMENT_NOT_CONFIGURED");
   }
-  if (request.get("authorization") !== `Bearer ${cronSecret}`) {
+  if (request.get("authorization") !== `Bearer ${internalJobSecret}`) {
     throw new AppError("Unauthorized", 401, "UNAUTHORIZED");
   }
 }
@@ -220,7 +220,7 @@ export function createApp(dependencies: AppDependencies) {
   }));
 
   app.post("/api/markets/:marketId/resolve", asyncRoute(async (request, response) => {
-    requireSettlementAuthorization(request, dependencies.cronSecret);
+    requireInternalJobAuthorization(request, dependencies.internalJobSecret);
     const body = z.object({ outcome: outcomeSchema.nullable(), sources: z.array(z.string().url()).max(10) }).parse(request.body);
     const market = await dependencies.markets.resolve({ marketId: String(request.params.marketId), outcome: body.outcome as Outcome | null, sources: body.sources });
     response.json({ market, snapshot: await dependencies.store.getMarketSnapshot(market.id) });
@@ -269,14 +269,14 @@ export function createApp(dependencies: AppDependencies) {
   }));
 
   app.post("/internal/jobs/poll-x", asyncRoute(async (request, response) => {
-    if (dependencies.cronSecret && request.get("authorization") !== `Bearer ${dependencies.cronSecret}`) {
+    if (dependencies.internalJobSecret && request.get("authorization") !== `Bearer ${dependencies.internalJobSecret}`) {
       throw new AppError("Unauthorized", 401, "UNAUTHORIZED");
     }
     response.json(await dependencies.xBots.poll());
   }));
 
   app.post("/internal/jobs/resolve-markets", asyncRoute(async (request, response) => {
-    requireSettlementAuthorization(request, dependencies.cronSecret);
+    requireInternalJobAuthorization(request, dependencies.internalJobSecret);
     const body = z.object({
       marketId: z.string().uuid().optional(),
       limit: z.number().int().min(1).max(50).optional(),

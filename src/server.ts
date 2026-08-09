@@ -33,8 +33,8 @@ const markets = new MarketService(store, extractor, events, summaries, analyses,
 const sessions = new SessionStore();
 const bots = new BotRegistry(
   (await store.getBotCredentials())
-    ?? (process.env.X_BOT_USER_ID && process.env.X_BOT_ACCESS_TOKEN
-      ? { userId: process.env.X_BOT_USER_ID, accessToken: process.env.X_BOT_ACCESS_TOKEN }
+    ?? (process.env.X_BOT_USER_ID && process.env.X_BOT_OAUTH2_ACCESS_TOKEN
+      ? { userId: process.env.X_BOT_USER_ID, accessToken: process.env.X_BOT_OAUTH2_ACCESS_TOKEN }
       : undefined),
 );
 const oauth = new XOAuthService(
@@ -51,7 +51,7 @@ const app = createApp({
   oauth,
   xBots,
   sessions,
-  cronSecret: config.cronSecret,
+  internalJobSecret: config.internalJobSecret,
   xConsumerSecret: config.xConsumerSecret,
 });
 const demoPulse = new DemoMarketPulse(store, markets);
@@ -62,9 +62,9 @@ const server = app.listen(config.port, () => {
 });
 
 // The live channel rides on the same server so the whole product is one
-// origin. Off by default because it generates video; BROADCAST=1 turns it on.
+// origin. Off by default because it generates video; LIVE_BROADCAST_ENABLED=1 turns it on.
 const broadcast =
-  process.env.BROADCAST === "1"
+  process.env.LIVE_BROADCAST_ENABLED === "1"
     ? mountBroadcast({
         app,
         server,

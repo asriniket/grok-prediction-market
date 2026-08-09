@@ -9,7 +9,7 @@ export interface AppConfig {
   port: number;
   databaseUrl: string;
   appUrl: string;
-  cronSecret?: string;
+  internalJobSecret?: string;
   xaiApiKey?: string;
   xaiModel: string;
   xClientId?: string;
@@ -25,7 +25,7 @@ export function loadConfig(): AppConfig {
     port,
     databaseUrl: required(process.env.DATABASE_URL, "DATABASE_URL"),
     appUrl: (process.env.APP_URL ?? `http://localhost:${port}`).replace(/\/$/, ""),
-    cronSecret: process.env.CRON_SECRET || undefined,
+    internalJobSecret: process.env.INTERNAL_JOB_SECRET || undefined,
     xaiApiKey: process.env.XAI_API_KEY || undefined,
     xaiModel: process.env.XAI_MODEL ?? "grok-4.3",
     xClientId: process.env.X_CLIENT_ID || undefined,

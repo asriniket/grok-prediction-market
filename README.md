@@ -47,7 +47,7 @@ session and never accept a caller-supplied wallet ID. Each X user ID maps to one
 local Threadline Karma account, so its balance and open positions persist across
 all Threadline markets in the configured Postgres database. The settlement
 routes (`/api/markets/:marketId/resolve` and `/internal/jobs/resolve-markets`)
-always require `Authorization: Bearer $CRON_SECRET`; they remain disabled until
+always require `Authorization: Bearer $INTERNAL_JOB_SECRET`; they remain disabled until
 that secret is configured. The polling route uses the same header when a secret
 is configured.
 
