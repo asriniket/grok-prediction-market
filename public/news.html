@@ -390,7 +390,7 @@ function tone(freq,at,dur,type,gain,glideTo){
    graphics — the board, stings — and ducks to a whisper under speech, so the
    stream never goes dead silent. Synthesis over a music file: nothing to
    license, nothing to load, and the encoder captures it like any page audio. */
-const bed={gain:null,lp:null,timer:null,step:0,next:0,target:0};
+const bed={gain:null,lp:null,timer:null,step:0,next:0,target:0,noise:null};
 const BED_CHORDS=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
 const mtof=(m)=>440*Math.pow(2,(m-69)/12);
 function bedTone(f,t,d,type,g,att){
@@ -400,35 +400,54 @@ function bedTone(f,t,d,type,g,att){
   gn.gain.exponentialRampToValueAtTime(0.001,t+d);
   o.connect(gn);gn.connect(bed.gain);o.start(t);o.stop(t+d+0.1);
 }
+/** Soft filtered-noise tick — the hi-hat of the news pulse. */
+function bedTick(t,g){
+  const c=ac();
+  if(!bed.noise){
+    const buf=c.createBuffer(1,c.sampleRate*0.06,c.sampleRate);
+    const ch=buf.getChannelData(0);
+    for(let i=0;i<ch.length;i++)ch[i]=(Math.random()*2-1)*(1-i/ch.length);
+    bed.noise=buf;
+  }
+  const src=c.createBufferSource();src.buffer=bed.noise;
+  const bp=c.createBiquadFilter();bp.type='bandpass';bp.frequency.value=6200;bp.Q.value=1.1;
+  const gn=c.createGain();gn.gain.setValueAtTime(g,t);
+  src.connect(bp);bp.connect(gn);gn.connect(bed.gain);src.start(t);
+}
+/** Rolling-news pattern: driving 16th arp, syncopated bass, tick, airy pad. */
 function bedStep(t,s){
   const chord=BED_CHORDS[Math.floor(s/16)%4];
-  if(s%8===0) bedTone(mtof(chord[0]-24),t,0.95,'sine',0.5);
-  const pat=[0,2,1,2,0,1,2,1];
-  if(s%2===0) bedTone(mtof(chord[pat[(s>>1)%8]]),t,0.22,'triangle',0.30);
-  if(s%16===0) chord.forEach(n=>bedTone(mtof(n),t,3.4,'sawtooth',0.045,1.4));
+  if(s%8===0||s%8===6) bedTone(mtof(chord[0]-24),t,0.8,'sine',0.55);
+  const pat=[0,1,2,1, 0,2,1,2, 0,1,2,0, 1,2,0,2];
+  const oct=(s%16>=12)?12:0;
+  bedTone(mtof(chord[pat[s%16]]+oct),t,0.16,'triangle',0.5);
+  if(s%4===2) bedTick(t,0.10);
+  if(s%16===0) chord.forEach(n=>bedTone(mtof(n),t,3.4,'sawtooth',0.06,1.2));
 }
 function bedStart(){
   if(bed.gain||!soundOn)return;
   const c=ac();
   bed.gain=c.createGain();bed.gain.gain.value=0;
-  bed.lp=c.createBiquadFilter();bed.lp.type='lowpass';bed.lp.frequency.value=1500;
+  bed.lp=c.createBiquadFilter();bed.lp.type='lowpass';bed.lp.frequency.value=2400;
   bed.gain.connect(bed.lp);bed.lp.connect(c.destination);
   bed.next=c.currentTime+0.15;bed.step=0;
-  const spb=60/104/2;
+  const spb=60/104/4;   // 16ths at 104 BPM
   bed.timer=setInterval(()=>{
     const now=ac().currentTime;
     while(bed.next<now+0.35){bedStep(bed.next,bed.step);bed.next+=spb;bed.step=(bed.step+1)%64;}
-  },120);
+  },100);
   bedLevel(bed.target||0.15);
 }
-/** 0..1 → bed presence. 1 = graphics-only swell, ~0.12 = whisper under speech. */
+/** 0..1 → bed presence. 1 = program-loud over graphics, ~0.12 under speech. */
 function bedLevel(x){
   bed.target=x;
   if(!bed.gain){bedStart();return;}
   const g=bed.gain.gain,c=ac();
   g.cancelScheduledValues(c.currentTime);
-  g.linearRampToValueAtTime(x*0.085,c.currentTime+0.9);
+  g.linearRampToValueAtTime(x*0.34,c.currentTime+0.9);
 }
+/** The capture browser gets no user gesture — never let its context sleep. */
+setInterval(()=>{ if(soundOn&&AC&&AC.state!=='running') AC.resume().catch(()=>{}); },2000);
 
 /** Broadcast sting: a low impact under a rising three-note motif. */
 function stingSound(){ if(!soundOn)return;
