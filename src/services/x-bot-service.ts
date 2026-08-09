@@ -17,6 +17,18 @@ function replyText(message: string): string {
   return message.slice(0, 280);
 }
 
+function marketReply(created: boolean, question: string, yesPrice: number, marketUrl: string): string {
+  const header = created ? "MARKET OPEN" : "MARKET ALREADY OPEN";
+  const odds = `YES ${yesPrice}¢  ·  NO ${100 - yesPrice}¢`;
+  const destination = `View market → ${marketUrl}`;
+  const available = Math.max(0, 280 - header.length - odds.length - destination.length - 3);
+  const normalizedQuestion = question.replace(/\s+/g, " ").trim();
+  const title = normalizedQuestion.length > available
+    ? available > 1 ? `${normalizedQuestion.slice(0, available - 1).trimEnd()}…` : ""
+    : normalizedQuestion;
+  return [header, title, odds, destination].filter(Boolean).join("\n");
+}
+
 export class XBotService {
   constructor(
     private readonly store: MarketStore,
@@ -76,7 +88,7 @@ export class XBotService {
     }
     const post = await client.getPost(sourceId);
     const history = await client.getAccountHistory(post.authorId);
-    this.markets.createAccount(history);
+    await this.markets.createAccount(history);
     const sourcePost: SourcePost = {
       id: post.id,
       url: `https://x.com/${post.authorHandle ?? history.handle}/status/${post.id}`,
@@ -87,10 +99,6 @@ export class XBotService {
     };
     const { market, created } = await this.markets.createMarket({ sourcePost, creatorUserId: mention.authorId });
     const yesPrice = Math.round(outcomePrice({ liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares }, "YES") * 100);
-    const action = created ? "Market opened" : "That market already exists";
-    return client.postReply(
-      mention.id,
-      replyText(`${action} · YES ${yesPrice}¢ / NO ${100 - yesPrice}¢\n${this.appUrl}/markets/${market.id}`),
-    );
+    return client.postReply(mention.id, marketReply(created, market.question, yesPrice, `${this.appUrl}/markets/${market.id}`));
   }
 }

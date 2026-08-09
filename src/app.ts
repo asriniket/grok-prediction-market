@@ -8,7 +8,7 @@ import { EventBus } from "./services/event-bus.js";
 import { MarketService } from "./services/market-service.js";
 import { SessionStore } from "./services/session-store.js";
 import { XBotService } from "./services/x-bot-service.js";
-import { marketIndexPage, marketPage } from "./ui/market-pages.js";
+import { marketIndexPage, marketPage, portfolioPage } from "./ui/market-pages.js";
 
 const outcomeSchema = z.enum(["YES", "NO"]);
 const historySchema = z.object({
@@ -28,6 +28,7 @@ const sourcePostSchema = z.object({
 });
 const claimSchema = z.object({
   question: z.string().min(12).max(240),
+  summary: z.string().trim().min(40).max(420).optional(),
   resolutionCriteria: z.array(z.string().min(8).max(500)).min(1).max(5),
   closesAt: z.string().datetime(),
   rationale: z.string().min(1).max(500),
@@ -53,7 +54,19 @@ function sessionUserId(request: Request, sessions: SessionStore): string | null 
   return sessions.getUserId(readCookie(request, "threadline_session"));
 }
 
-function safeMarketReturnTo(value: unknown): string {
+function requireSettlementAuthorization(request: Request, cronSecret?: string): void {
+  // Settlement changes every holder's balance. It must never be exposed as a
+  // public HTTP action, including in a local hackathon environment.
+  if (!cronSecret) {
+    throw new AppError("Set CRON_SECRET before enabling market settlement", 503, "SETTLEMENT_NOT_CONFIGURED");
+  }
+  if (request.get("authorization") !== `Bearer ${cronSecret}`) {
+    throw new AppError("Unauthorized", 401, "UNAUTHORIZED");
+  }
+}
+
+function safeReturnTo(value: unknown): string {
+  if (value === "/portfolio") return value;
   return typeof value === "string" && /^\/markets\/[0-9a-f-]{36}$/i.test(value) ? value : "/";
 }
 
@@ -101,6 +114,14 @@ export function createApp(dependencies: AppDependencies) {
     response.json({ account });
   }));
 
+  app.get("/api/portfolio", asyncRoute(async (request, response) => {
+    const userId = sessionUserId(request, dependencies.sessions);
+    if (!userId) throw new AppError("Link your X account to view your portfolio", 401, "X_ACCOUNT_NOT_LINKED");
+    const portfolio = await dependencies.store.getPortfolio(userId);
+    if (!portfolio) throw new AppError("Karma account not found", 404, "NOT_FOUND");
+    response.json({ portfolio });
+  }));
+
   app.post("/api/markets", asyncRoute(async (request, response) => {
     const body = z.object({
       sourcePost: sourcePostSchema,
@@ -131,10 +152,24 @@ export function createApp(dependencies: AppDependencies) {
     response.json({ points: await dependencies.store.getPriceHistory(String(request.params.marketId), limit) });
   }));
 
+  app.post("/api/markets/:marketId/summary", asyncRoute(async (request, response) => {
+    const summary = await dependencies.markets.ensureSummary(String(request.params.marketId));
+    response.json({ summary });
+  }));
+
+  app.post("/api/markets/:marketId/analysis", asyncRoute(async (request, response) => {
+    const body = z.object({ refresh: z.boolean().optional() }).catch({}).parse(request.body);
+    response.json({ analysis: await dependencies.markets.ensureAnalysis(String(request.params.marketId), body.refresh === true) });
+  }));
+
   app.post("/api/markets/:marketId/trades", asyncRoute(async (request, response) => {
     const userId = sessionUserId(request, dependencies.sessions);
     if (!userId) throw new AppError("Link your X account before trading", 401, "X_ACCOUNT_NOT_LINKED");
-    const body = z.object({ outcome: outcomeSchema, credits: z.number().finite().positive() }).parse(request.body);
+    const body = z.object({
+      outcome: outcomeSchema,
+      credits: z.number().finite().positive(),
+      idempotencyKey: z.string().uuid().optional(),
+    }).parse(request.body);
     const trade = await dependencies.markets.trade({ marketId: String(request.params.marketId), userId, ...body });
     response.status(201).json({ trade, snapshot: await dependencies.store.getMarketSnapshot(String(request.params.marketId), userId) });
   }));
@@ -142,25 +177,42 @@ export function createApp(dependencies: AppDependencies) {
   app.post("/api/markets/:marketId/sells", asyncRoute(async (request, response) => {
     const userId = sessionUserId(request, dependencies.sessions);
     if (!userId) throw new AppError("Link your X account before trading", 401, "X_ACCOUNT_NOT_LINKED");
-    const body = z.object({ outcome: outcomeSchema, shares: z.number().finite().positive() }).parse(request.body);
+    const body = z.object({
+      outcome: outcomeSchema,
+      shares: z.number().finite().positive(),
+      idempotencyKey: z.string().uuid().optional(),
+    }).parse(request.body);
     const trade = await dependencies.markets.sell({ marketId: String(request.params.marketId), userId, ...body });
     response.status(201).json({ trade, snapshot: await dependencies.store.getMarketSnapshot(String(request.params.marketId), userId) });
   }));
 
   app.post("/api/markets/:marketId/resolve", asyncRoute(async (request, response) => {
+    requireSettlementAuthorization(request, dependencies.cronSecret);
     const body = z.object({ outcome: outcomeSchema.nullable(), sources: z.array(z.string().url()).max(10) }).parse(request.body);
     const market = await dependencies.markets.resolve({ marketId: String(request.params.marketId), outcome: body.outcome as Outcome | null, sources: body.sources });
     response.json({ market, snapshot: await dependencies.store.getMarketSnapshot(market.id) });
   }));
 
   app.get("/markets/:marketId", asyncRoute(async (request, response) => {
-    const market = await dependencies.store.getMarket(String(request.params.marketId));
-    if (!market) throw new AppError("Market not found", 404, "NOT_FOUND");
     const linkedUserId = sessionUserId(request, dependencies.sessions);
-    const snapshot = await dependencies.store.getMarketSnapshot(market.id, linkedUserId ?? undefined);
-    const account = linkedUserId ? await dependencies.store.getAccount(linkedUserId) : null;
-    const history = await dependencies.store.getPriceHistory(snapshot.market.id);
+    const marketId = String(request.params.marketId);
+    const [snapshot, account, history] = await Promise.all([
+      dependencies.store.getMarketSnapshot(marketId, linkedUserId ?? undefined),
+      linkedUserId ? dependencies.store.getAccount(linkedUserId) : Promise.resolve(null),
+      dependencies.store.getPriceHistory(marketId),
+    ]);
     response.type("html").send(marketPage(snapshot, account, history, Boolean(linkedUserId)));
+  }));
+
+  app.get("/portfolio", asyncRoute(async (request, response) => {
+    const userId = sessionUserId(request, dependencies.sessions);
+    if (!userId) {
+      response.redirect("/auth/x/connect/start?returnTo=/portfolio");
+      return;
+    }
+    const portfolio = await dependencies.store.getPortfolio(userId);
+    if (!portfolio) throw new AppError("Karma account not found", 404, "NOT_FOUND");
+    response.type("html").send(portfolioPage(portfolio));
   }));
 
   app.get("/auth/x/start", (_request, response) => {
@@ -168,7 +220,7 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.get("/auth/x/connect/start", (request, response) => {
-    response.redirect(dependencies.oauth.startTrader(safeMarketReturnTo(request.query.returnTo)));
+    response.redirect(dependencies.oauth.startTrader(safeReturnTo(request.query.returnTo)));
   });
 
   app.get("/auth/x/callback", asyncRoute(async (request, response) => {
@@ -188,6 +240,20 @@ export function createApp(dependencies: AppDependencies) {
       throw new AppError("Unauthorized", 401, "UNAUTHORIZED");
     }
     response.json(await dependencies.xBots.poll());
+  }));
+
+  app.post("/internal/jobs/resolve-markets", asyncRoute(async (request, response) => {
+    requireSettlementAuthorization(request, dependencies.cronSecret);
+    const body = z.object({
+      marketId: z.string().uuid().optional(),
+      limit: z.number().int().min(1).max(50).optional(),
+    }).catch({}).parse(request.body);
+    if (body.marketId) {
+      const result = await dependencies.markets.resolveWithGrok(body.marketId);
+      response.json(result);
+      return;
+    }
+    response.json(await dependencies.markets.resolveDueMarkets(body.limit ?? 20));
   }));
 
   app.get("/events", (request, response) => {

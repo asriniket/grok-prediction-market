@@ -10,6 +10,7 @@ import type {
   AccountHistoryInput,
   BotCredentials,
   Market,
+  MarketAnalysis,
   MarketMetrics,
   MarketPricePoint,
   MarketSnapshot,
@@ -67,6 +68,8 @@ function marketFromRow(row: Row): Market {
     },
     creatorUserId: String(row.creator_user_id),
     question: String(row.question),
+    summary: row.summary === null || row.summary === undefined ? null : String(row.summary),
+    analysis: analysisFromRow(row.analysis),
     resolutionCriteria: parseJson<string[]>(row.resolution_criteria),
     closesAt: String(row.closes_at),
     status: String(row.status) as MarketStatus,
@@ -80,6 +83,29 @@ function marketFromRow(row: Row): Market {
   };
 }
 
+function analysisFromRow(value: unknown): MarketAnalysis | null {
+  if (value === null || value === undefined) return null;
+  try {
+    const parsed = parseJson<Partial<MarketAnalysis>>(value);
+    if (typeof parsed.body !== "string" || typeof parsed.generatedAt !== "string" || !Array.isArray(parsed.sources)) return null;
+    return {
+      body: parsed.body,
+      sources: parsed.sources.filter((source): source is string => typeof source === "string"),
+      posts: Array.isArray(parsed.posts)
+        ? parsed.posts.filter((post): post is MarketAnalysis["posts"][number] => Boolean(post) && typeof post === "object"
+          && typeof (post as unknown as Record<string, unknown>).url === "string"
+          && typeof (post as unknown as Record<string, unknown>).handle === "string"
+          && typeof (post as unknown as Record<string, unknown>).text === "string"
+          && typeof (post as unknown as Record<string, unknown>).createdAt === "string"
+          && typeof (post as unknown as Record<string, unknown>).relevance === "string")
+        : [],
+      generatedAt: parsed.generatedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function positionFromRow(row: Row): Position {
   return {
     marketId: String(row.market_id),
@@ -87,6 +113,21 @@ function positionFromRow(row: Row): Position {
     yesShares: numeric(row.yes_shares),
     noShares: numeric(row.no_shares),
     netSpend: numeric(row.net_spend),
+  };
+}
+
+function tradeFromRow(row: Row): Trade {
+  return {
+    id: String(row.id),
+    marketId: String(row.market_id),
+    userId: String(row.user_id),
+    side: String(row.side) as Trade["side"],
+    outcome: String(row.outcome) as Outcome,
+    credits: numeric(row.credits),
+    shares: numeric(row.shares),
+    priceAfter: numeric(row.price_after),
+    executedAt: String(row.executed_at),
+    idempotencyKey: row.idempotency_key === null || row.idempotency_key === undefined ? undefined : String(row.idempotency_key),
   };
 }
 
@@ -127,6 +168,8 @@ export class SqliteStore {
         source_created_at TEXT NOT NULL,
         creator_user_id TEXT NOT NULL,
         question TEXT NOT NULL,
+        summary TEXT,
+        analysis TEXT,
         resolution_criteria TEXT NOT NULL,
         closes_at TEXT NOT NULL,
         status TEXT NOT NULL CHECK(status IN ('OPEN', 'RESOLVED', 'UNRESOLVABLE')),
@@ -155,7 +198,9 @@ export class SqliteStore {
         credits REAL NOT NULL,
         shares REAL NOT NULL,
         price_after REAL NOT NULL,
-        executed_at TEXT NOT NULL
+        executed_at TEXT NOT NULL,
+        idempotency_key TEXT,
+        request_amount REAL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS ledger_entries (
         id TEXT PRIMARY KEY,
@@ -191,11 +236,16 @@ export class SqliteStore {
     // Existing local hackathon databases predate these columns. Keep this a
     // forward-only, data-preserving migration instead of recreating tables.
     this.ensureColumn("trades", "side", "TEXT NOT NULL DEFAULT 'BUY' CHECK(side IN ('BUY', 'SELL'))");
+    this.ensureColumn("trades", "idempotency_key", "TEXT");
+    this.ensureColumn("trades", "request_amount", "REAL");
     this.ensureColumn("market_price_points", "kind", "TEXT NOT NULL DEFAULT 'TRADE' CHECK(kind IN ('OPEN', 'TRADE', 'DEMO'))");
+    this.ensureColumn("markets", "summary", "TEXT");
+    this.ensureColumn("markets", "analysis", "TEXT");
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_idempotency_key ON trades(idempotency_key) WHERE idempotency_key IS NOT NULL");
     this.db.exec("PRAGMA optimize");
   }
 
-  private ensureColumn(table: "trades" | "market_price_points", column: string, definition: string): void {
+  private ensureColumn(table: "markets" | "trades" | "market_price_points", column: string, definition: string): void {
     const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Row[];
     if (columns.some((item) => String(item.name) === column)) return;
     this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
@@ -247,6 +297,7 @@ export class SqliteStore {
     sourcePost: SourcePost;
     creatorUserId: string;
     question: string;
+    summary?: string | null;
     resolutionCriteria: string[];
     closesAt: string;
     liquidityB: number;
@@ -259,9 +310,9 @@ export class SqliteStore {
       this.db.prepare(`
         INSERT INTO markets (
           id, source_post_id, source_url, source_text, source_author_id, source_author_handle, source_created_at,
-          creator_user_id, question, resolution_criteria, closes_at, status, resolved_outcome, resolution_sources,
+          creator_user_id, question, summary, resolution_criteria, closes_at, status, resolved_outcome, resolution_sources,
           liquidity_b, yes_shares, no_shares, created_at, resolved_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', NULL, '[]', ?, 0, 0, ?, NULL)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', NULL, '[]', ?, 0, 0, ?, NULL)
       `).run(
         id,
         input.sourcePost.id,
@@ -272,6 +323,7 @@ export class SqliteStore {
         input.sourcePost.createdAt,
         input.creatorUserId,
         input.question,
+        input.summary ?? null,
         JSON.stringify(input.resolutionCriteria),
         input.closesAt,
         input.liquidityB,
@@ -287,6 +339,26 @@ export class SqliteStore {
     return row ? marketFromRow(row) : null;
   }
 
+  saveMarketSummary(marketId: string, summary: string): string {
+    return this.transaction(() => {
+      const market = this.getMarket(marketId);
+      if (!market) throw new NotFoundError("Market not found");
+      if (market.summary) return market.summary;
+      this.db.prepare("UPDATE markets SET summary = ? WHERE id = ?").run(summary, marketId);
+      return summary;
+    });
+  }
+
+  saveMarketAnalysis(marketId: string, analysis: MarketAnalysis, replace = false): MarketAnalysis {
+    return this.transaction(() => {
+      const market = this.getMarket(marketId);
+      if (!market) throw new NotFoundError("Market not found");
+      if (market.analysis && !replace) return market.analysis;
+      this.db.prepare("UPDATE markets SET analysis = ? WHERE id = ?").run(JSON.stringify(analysis), marketId);
+      return analysis;
+    });
+  }
+
   getMarketBySourcePost(sourcePostId: string): Market | null {
     const row = this.db.prepare("SELECT * FROM markets WHERE source_post_id = ?").get(sourcePostId) as Row | undefined;
     return row ? marketFromRow(row) : null;
@@ -300,6 +372,15 @@ export class SqliteStore {
   getPosition(marketId: string, userId: string): Position | null {
     const row = this.db.prepare("SELECT * FROM positions WHERE market_id = ? AND user_id = ?").get(marketId, userId) as Row | undefined;
     return row ? positionFromRow(row) : null;
+  }
+
+  private tradeForIdempotencyKey(idempotencyKey: string): { trade: Trade; requestAmount: number | null } | null {
+    const row = this.db.prepare("SELECT * FROM trades WHERE idempotency_key = ?").get(idempotencyKey) as Row | undefined;
+    if (!row) return null;
+    return {
+      trade: tradeFromRow(row),
+      requestAmount: row.request_amount === null || row.request_amount === undefined ? null : numeric(row.request_amount),
+    };
   }
 
   getMarketSnapshot(marketId: string, userId?: string): MarketSnapshot {
@@ -347,15 +428,30 @@ export class SqliteStore {
     };
   }
 
-  buy(input: { marketId: string; userId: string; outcome: Outcome; credits: number }): Trade {
+  buy(input: { marketId: string; userId: string; outcome: Outcome; credits: number; idempotencyKey?: string }): Trade {
+    if (!Number.isFinite(input.credits) || input.credits <= 0) {
+      throw new AppError("credits must be positive", 422, "INVALID_TRADE");
+    }
     return this.transaction(() => {
       const market = this.getMarket(input.marketId);
       if (!market) throw new NotFoundError("Market not found");
+      if (input.idempotencyKey) {
+        const previous = this.tradeForIdempotencyKey(input.idempotencyKey);
+        if (previous) {
+          const sameRequest = previous.trade.marketId === input.marketId
+            && previous.trade.userId === input.userId
+            && previous.trade.side === "BUY"
+            && previous.trade.outcome === input.outcome
+            && previous.requestAmount !== null
+            && Math.abs(previous.requestAmount - input.credits) < 1e-8;
+          if (!sameRequest) throw new ConflictError("This idempotency key was already used for a different trade");
+          return previous.trade;
+        }
+      }
       if (market.status !== "OPEN") throw new ConflictError("Trading is closed for this market");
       if (new Date(market.closesAt) <= new Date()) throw new ConflictError("Trading is closed because the market deadline passed");
       const account = this.getAccount(input.userId);
       if (!account) throw new NotFoundError("Create a karma account before trading");
-      if (!Number.isFinite(input.credits) || input.credits <= 0) throw new AppError("credits must be positive", 422, "INVALID_TRADE");
       if (input.credits > account.availableBalance + 1e-8) throw new AppError("Insufficient karma balance", 422, "INSUFFICIENT_BALANCE");
 
       const state: AmmState = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
@@ -373,6 +469,7 @@ export class SqliteStore {
         shares,
         priceAfter: outcomePrice(nextState, "YES"),
         executedAt: now(),
+        idempotencyKey: input.idempotencyKey,
       };
 
       this.db.prepare("UPDATE markets SET yes_shares = ?, no_shares = ? WHERE id = ?").run(nextYes, nextNo, market.id);
@@ -386,33 +483,52 @@ export class SqliteStore {
           net_spend = net_spend + excluded.net_spend
       `).run(market.id, input.userId, input.outcome === "YES" ? shares : 0, input.outcome === "NO" ? shares : 0, actualCost);
       this.db.prepare("UPDATE accounts SET available_balance = available_balance - ? WHERE x_user_id = ?").run(actualCost, input.userId);
-      this.db.prepare("INSERT INTO trades (id, market_id, user_id, side, outcome, credits, shares, price_after, executed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(trade.id, trade.marketId, trade.userId, trade.side, trade.outcome, trade.credits, trade.shares, trade.priceAfter, trade.executedAt);
+      this.db.prepare("INSERT INTO trades (id, market_id, user_id, side, outcome, credits, shares, price_after, executed_at, idempotency_key, request_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(trade.id, trade.marketId, trade.userId, trade.side, trade.outcome, trade.credits, trade.shares, trade.priceAfter, trade.executedAt, input.idempotencyKey ?? null, input.credits);
       this.insertLedger(input.userId, market.id, "TRADE_BUY", -actualCost, `${input.outcome} shares`);
       return trade;
     });
   }
 
-  sell(input: { marketId: string; userId: string; outcome: Outcome; shares: number }): Trade {
+  sell(input: { marketId: string; userId: string; outcome: Outcome; shares: number; idempotencyKey?: string }): Trade {
+    if (!Number.isFinite(input.shares) || input.shares <= 0) {
+      throw new AppError("shares must be positive", 422, "INVALID_TRADE");
+    }
     return this.transaction(() => {
       const market = this.getMarket(input.marketId);
       if (!market) throw new NotFoundError("Market not found");
+      if (input.idempotencyKey) {
+        const previous = this.tradeForIdempotencyKey(input.idempotencyKey);
+        if (previous) {
+          const sameRequest = previous.trade.marketId === input.marketId
+            && previous.trade.userId === input.userId
+            && previous.trade.side === "SELL"
+            && previous.trade.outcome === input.outcome
+            && previous.requestAmount !== null
+            && Math.abs(previous.requestAmount - input.shares) < 1e-8;
+          if (!sameRequest) throw new ConflictError("This idempotency key was already used for a different trade");
+          return previous.trade;
+        }
+      }
       if (market.status !== "OPEN" || new Date(market.closesAt) <= new Date()) {
         throw new ConflictError("Trading is closed for this market");
-      }
-      if (!Number.isFinite(input.shares) || input.shares <= 0) {
-        throw new AppError("shares must be positive", 422, "INVALID_TRADE");
       }
       const position = this.getPosition(market.id, input.userId);
       const owned = input.outcome === "YES" ? position?.yesShares ?? 0 : position?.noShares ?? 0;
       if (input.shares > owned + 1e-8) {
         throw new AppError(`You only hold ${owned.toFixed(2)} ${input.outcome} shares`, 422, "INSUFFICIENT_SHARES");
       }
+      // A near-equal request may be a rounded browser value. Sell the actual
+      // balance so floating point residue cannot leave a negative position.
+      const shares = Math.min(input.shares, owned);
+      if (shares <= 1e-8) {
+        throw new AppError(`You only hold ${owned.toFixed(2)} ${input.outcome} shares`, 422, "INSUFFICIENT_SHARES");
+      }
 
       const state: AmmState = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
-      const proceeds = proceedsForSale(state, input.outcome, input.shares);
-      const nextYes = input.outcome === "YES" ? Math.max(0, market.yesShares - input.shares) : market.yesShares;
-      const nextNo = input.outcome === "NO" ? Math.max(0, market.noShares - input.shares) : market.noShares;
+      const proceeds = proceedsForSale(state, input.outcome, shares);
+      const nextYes = input.outcome === "YES" ? Math.max(0, market.yesShares - shares) : market.yesShares;
+      const nextNo = input.outcome === "NO" ? Math.max(0, market.noShares - shares) : market.noShares;
       const nextState = { liquidityB: market.liquidityB, yesShares: nextYes, noShares: nextNo };
       const trade: Trade = {
         id: randomUUID(),
@@ -421,9 +537,10 @@ export class SqliteStore {
         side: "SELL",
         outcome: input.outcome,
         credits: proceeds,
-        shares: input.shares,
+        shares,
         priceAfter: outcomePrice(nextState, "YES"),
         executedAt: now(),
+        idempotencyKey: input.idempotencyKey,
       };
 
       this.db.prepare("UPDATE markets SET yes_shares = ?, no_shares = ? WHERE id = ?").run(nextYes, nextNo, market.id);
@@ -434,10 +551,10 @@ export class SqliteStore {
           no_shares = no_shares - ?,
           net_spend = net_spend - ?
         WHERE market_id = ? AND user_id = ?
-      `).run(input.outcome === "YES" ? input.shares : 0, input.outcome === "NO" ? input.shares : 0, proceeds, market.id, input.userId);
+      `).run(input.outcome === "YES" ? shares : 0, input.outcome === "NO" ? shares : 0, proceeds, market.id, input.userId);
       this.db.prepare("UPDATE accounts SET available_balance = available_balance + ? WHERE x_user_id = ?").run(proceeds, input.userId);
-      this.db.prepare("INSERT INTO trades (id, market_id, user_id, side, outcome, credits, shares, price_after, executed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(trade.id, trade.marketId, trade.userId, trade.side, trade.outcome, trade.credits, trade.shares, trade.priceAfter, trade.executedAt);
+      this.db.prepare("INSERT INTO trades (id, market_id, user_id, side, outcome, credits, shares, price_after, executed_at, idempotency_key, request_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(trade.id, trade.marketId, trade.userId, trade.side, trade.outcome, trade.credits, trade.shares, trade.priceAfter, trade.executedAt, input.idempotencyKey ?? null, input.shares);
       this.insertLedger(input.userId, market.id, "TRADE_SELL", proceeds, `${input.outcome} shares`);
       return trade;
     });
@@ -463,12 +580,12 @@ export class SqliteStore {
       const market = this.getMarket(input.marketId);
       if (!market) throw new NotFoundError("Market not found");
       if (market.status !== "OPEN") throw new ConflictError("Market has already been resolved");
-      if (input.outcome !== null && input.sources.length === 0) {
-        throw new AppError("A YES or NO resolution needs at least one source URL", 422, "EVIDENCE_REQUIRED");
+      if (input.sources.length === 0) {
+        throw new AppError("A settlement needs at least one source URL", 422, "EVIDENCE_REQUIRED");
       }
       const status: MarketStatus = input.outcome === null ? "UNRESOLVABLE" : "RESOLVED";
       const resolvedAt = now();
-      const positions = this.db.prepare("SELECT * FROM positions WHERE market_id = ?").all(market.id) as Row[];
+      const positions = this.db.prepare("SELECT * FROM positions WHERE market_id = ? ORDER BY user_id").all(market.id) as Row[];
       for (const rawPosition of positions) {
         const position = positionFromRow(rawPosition);
         const payout = input.outcome === null
@@ -485,6 +602,9 @@ export class SqliteStore {
           );
         }
       }
+      // Payouts are recorded in the immutable ledger. A settled market must
+      // not retain tradeable or portfolio-visible shares.
+      this.db.prepare("UPDATE positions SET yes_shares = 0, no_shares = 0, net_spend = 0 WHERE market_id = ?").run(market.id);
       this.db.prepare("UPDATE markets SET status = ?, resolved_outcome = ?, resolution_sources = ?, resolved_at = ? WHERE id = ?")
         .run(status, input.outcome, JSON.stringify(input.sources), resolvedAt, market.id);
       return this.getMarket(market.id)!;

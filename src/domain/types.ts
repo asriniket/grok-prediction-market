@@ -15,9 +15,27 @@ export interface SourcePost {
 
 export interface ClaimDraft {
   question: string;
+  /** User-facing, source-grounded market analysis generated with the claim. */
+  summary?: string;
   resolutionCriteria: string[];
   closesAt: string;
   rationale: string;
+}
+
+export interface MarketAnalysis {
+  /** A source-aware X pulse, never a market-resolution decision or trade recommendation. */
+  body: string;
+  sources: string[];
+  posts: MarketPulsePost[];
+  generatedAt: string;
+}
+
+export interface MarketPulsePost {
+  url: string;
+  handle: string;
+  text: string;
+  createdAt: string;
+  relevance: string;
 }
 
 export interface Market {
@@ -25,6 +43,10 @@ export interface Market {
   sourcePost: SourcePost;
   creatorUserId: string;
   question: string;
+  /** Short source-grounded synopsis created together with the market. */
+  summary: string | null;
+  /** Cached X-search synthesis, generated when a market is first opened. */
+  analysis: MarketAnalysis | null;
   resolutionCriteria: string[];
   closesAt: string;
   status: MarketStatus;
@@ -75,6 +97,8 @@ export interface Trade {
   shares: number;
   priceAfter: number;
   executedAt: string;
+  /** Replaying the same request key returns this trade without moving the book twice. */
+  idempotencyKey?: string;
 }
 
 export interface MarketPricePoint {
@@ -99,6 +123,24 @@ export interface MarketSnapshot {
   priceNo: number;
   position: Position | null;
   metrics: MarketMetrics;
+}
+
+export interface PortfolioPosition {
+  market: Market;
+  position: Position;
+  priceYes: number;
+  priceNo: number;
+  /** Credits returned by closing all remaining shares at the current AMM state. */
+  estimatedExitValue: number;
+  /** Mark-to-market result on the open position, excluding prior realized exits. */
+  openPnl: number;
+}
+
+export interface Portfolio {
+  account: Account;
+  positions: PortfolioPosition[];
+  estimatedExitValue: number;
+  totalEquity: number;
 }
 
 export interface DomainEvent<T = Record<string, unknown>> {
