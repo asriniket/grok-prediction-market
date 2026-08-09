@@ -7,8 +7,6 @@ import { BotRegistry } from "../integrations/x-oauth.js";
 import { MarketService } from "./market-service.js";
 import { xActivityMentions } from "./x-webhook.js";
 
-const COMMAND = /\bmarket\s+this\b/i;
-
 function postIdInUrl(text: string): string | null {
   return text.match(/(?:x|twitter)\.com\/[\w_]+\/status\/(\d+)/i)?.[1] ?? null;
 }
@@ -88,10 +86,6 @@ export class XBotService {
     this.pendingMentionIds.add(mention.id);
     try {
       if (await this.store.isMentionProcessed(mention.id)) return { processed: false, replied: false, failed: false };
-      if (!COMMAND.test(mention.text)) {
-        await this.store.markMentionProcessed(mention.id);
-        return { processed: true, replied: false, failed: false };
-      }
       try {
         const replyId = await this.openMarketFromMention(client, mention);
         await this.store.markMentionProcessed(mention.id, replyId);
@@ -132,13 +126,9 @@ export class XBotService {
   }
 
   private async openMarketFromMention(client: XApiClient, mention: XPost): Promise<string> {
-    const sourceId = mention.repliedToPostId ?? postIdInUrl(mention.text);
-    if (!sourceId) {
-      return client.postReply(
-        mention.id,
-        replyText("Reply directly to the post you want to market, then mention me with ‘market this’."),
-      );
-    }
+    // A reply markets its parent, a pasted post URL markets that post, and a
+    // direct @ThreadlineBot mention markets the mention itself.
+    const sourceId = mention.repliedToPostId ?? postIdInUrl(mention.text) ?? mention.id;
     const post = await client.getPost(sourceId);
     const history = await client.getAccountHistory(post.authorId);
     await this.markets.createAccount(history);

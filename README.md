@@ -36,8 +36,8 @@ to use structured Grok extraction and X credentials to enable the live bot.
 | `GET /api/me` | Read the locally linked X trader wallet. |
 | `GET /auth/x/start` | Authorize the market bot with OAuth 2.0 + PKCE. |
 | `GET /auth/x/connect/start` | Link a trader's X account and seed their karma wallet. |
-| `POST /internal/jobs/poll-x` | Poll bot mentions and reply to “market this”. |
-| `GET` / `POST /webhooks/x` | X Account Activity webhook: CRC validation and signed mention delivery. |
+| `POST /internal/jobs/poll-x` | Optional fallback to poll and process bot mentions. |
+| `GET` / `POST /webhooks/x` | X Activity webhook: CRC validation and signed mention delivery. |
 | `POST /internal/jobs/resolve-markets` | Run Grok's source-backed settlement pass for one due market or a bounded due-market batch. |
 | `GET /events` | SSE feed for the video/debate layer. |
 
@@ -59,9 +59,9 @@ is configured.
    `X_REDIRECT_URI`, and enable OAuth 2.0 authorization-code flow.
 3. Visit `/auth/x/start` and authorize the market bot account with
    `tweet.read users.read tweet.write offline.access`.
-4. Schedule `POST /internal/jobs/poll-x` every minute. The endpoint uses the
-   mentions timeline, creates a market only for messages containing
-   `market this`, and replies once with the market URL.
+4. Register the X Activity `post.mention.create` webhook subscription for the
+   bot. Every bot mention opens a market: a direct mention uses that post as
+   the source, while a reply uses its parent post.
 5. Schedule `POST /internal/jobs/resolve-markets` every few minutes after a
    market closes. Grok first searches the web and X, then may settle only with
    high-confidence, cited evidence. A `PENDING` result leaves the market open

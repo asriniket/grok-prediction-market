@@ -266,7 +266,7 @@ function layout(content: string, title: string, account: Account | null = null):
 export function marketIndexPage(markets: MarketSnapshot[], account: Account | null = null): string {
   const openMarkets = markets.filter(({ market }) => market.status === "OPEN").length;
   const cards = markets.length === 0
-    ? `<p class="empty">No markets yet. Mention the bot with <b>market this</b> to create the first one.</p>`
+    ? `<p class="empty">No markets yet. Mention <b>@ThreadlineBot</b> in a post to create the first one.</p>`
     : markets.map(({ market, priceYes, priceNo }) => `
       <a class="market-card" href="/markets/${market.id}">
         <div class="market-card-top"><span class="eyebrow">${market.status === "OPEN" ? "Open market" : escapeHtml(market.status)}</span><span>Closes ${new Date(market.closesAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span></div>
