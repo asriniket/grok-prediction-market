@@ -13,6 +13,13 @@ import { SessionStore } from "./services/session-store.js";
 import { DemoMarketPulse } from "./services/demo-market-pulse.js";
 import { mountBroadcast } from "./broadcast/mount.js";
 
+// Background loops (director, demo pulse, bot polling) run promises outside
+// any request handler. One rejected query on a dropped Neon connection must
+// not kill the whole channel — log it and let the loop's own retry recover.
+process.on("unhandledRejection", (reason) => {
+  console.error(`[guard] unhandled rejection: ${reason instanceof Error ? reason.message : reason}`);
+});
+
 const config = loadConfig();
 const store = new PostgresStore(config.databaseUrl);
 await store.migrate();

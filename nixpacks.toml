@@ -1,0 +1,4 @@
+# Railway build config: the broadcast finishes clips with ffmpeg/ffprobe
+# (trailing-silence trims, duration probes). "..." keeps Nixpacks' defaults.
+[phases.setup]
+nixPkgs = ["...", "ffmpeg"]
