@@ -5,7 +5,7 @@ import type { MarketStore } from "../infrastructure/store.js";
 import { XApiClient } from "../integrations/x-client.js";
 import { BotRegistry } from "../integrations/x-oauth.js";
 import { MarketService } from "./market-service.js";
-import { xWebhookMentions } from "./x-webhook.js";
+import { xActivityMentions } from "./x-webhook.js";
 
 const COMMAND = /\bmarket\s+this\b/i;
 
@@ -59,14 +59,14 @@ export class XBotService {
   }
 
   /**
-   * Accepts a signed Account Activity payload and queues its mentions after
-   * returning HTTP 202. X requires a fast acknowledgement; the potentially
-   * slower Grok market-creation call must not keep the webhook request open.
+   * Accepts a signed X webhook payload and queues its mentions after returning
+   * HTTP 202. X requires a fast acknowledgement; the potentially slower Grok
+   * market-creation call must not keep the webhook request open.
    */
-  acceptAccountActivity(payload: unknown): { configured: boolean; accepted: number } {
+  acceptWebhookEvents(payload: unknown): { configured: boolean; accepted: number } {
     const bot = this.bots.get();
     if (!bot) return { configured: false, accepted: 0 };
-    const mentions = xWebhookMentions(payload, bot.userId);
+    const mentions = xActivityMentions(payload, bot.userId);
     const client = new XApiClient(bot.accessToken);
     for (const mention of mentions) {
       queueMicrotask(() => {

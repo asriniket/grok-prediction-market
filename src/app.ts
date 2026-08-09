@@ -111,7 +111,7 @@ export function createApp(dependencies: AppDependencies) {
     }
     // Acknowledge inside X's delivery window; XBotService handles valid
     // mention work asynchronously and retains the normal duplicate guards.
-    response.status(202).json(dependencies.xBots.acceptAccountActivity(request.body));
+    response.status(202).json(dependencies.xBots.acceptWebhookEvents(request.body));
   }));
 
   app.get(["/", "/markets"], asyncRoute(async (request, response) => {
