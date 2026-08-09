@@ -37,6 +37,7 @@ to use structured Grok extraction and X credentials to enable the live bot.
 | `GET /auth/x/start` | Authorize the market bot with OAuth 2.0 + PKCE. |
 | `GET /auth/x/connect/start` | Link a trader's X account and seed their karma wallet. |
 | `POST /internal/jobs/poll-x` | Poll bot mentions and reply to “market this”. |
+| `GET` / `POST /webhooks/x` | X Account Activity webhook: CRC validation and signed mention delivery. |
 | `POST /internal/jobs/resolve-markets` | Run Grok's source-backed settlement pass for one due market or a bounded due-market batch. |
 | `GET /events` | SSE feed for the video/debate layer. |
 
@@ -70,6 +71,23 @@ is configured.
 The OAuth callback saves bot tokens in the configured Postgres database for the
 hackathon. For a production deployment, move refresh tokens to encrypted
 persistent storage in a managed secret store.
+
+### Optional: instant X mention delivery
+
+Polling is the fallback. To have X deliver mentions directly to Threadline,
+configure the V2 Account Activity API with the public endpoint
+`https://YOUR_APP/webhooks/x`. Set `X_WEBHOOK_CONSUMER_SECRET` to the app's
+Consumer/API Secret (not its OAuth client secret). The endpoint responds to
+X's CRC validation and verifies every `x-twitter-webhooks-signature` before
+accepting an event. It acknowledges promptly, then uses the same idempotent
+mention flow as polling to open and reply to markets.
+
+Webhook registration and bot-user subscription are X developer-console/API
+operations and require Account Activity API access. The V2 Account Activity
+API is currently offered on Pay Per Use and Enterprise tiers. X requires a
+public HTTPS endpoint, and its registration request returns the `webhook_id`
+needed for the bot subscription. Keep polling enabled until X reports both the
+webhook and subscription as valid; the processing table makes overlap safe.
 
 ## Market design
 

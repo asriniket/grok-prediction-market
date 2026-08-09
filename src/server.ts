@@ -44,7 +44,16 @@ const oauth = new XOAuthService(
   (history) => markets.createAccount(history),
 );
 const xBots = new XBotService(store, bots, markets, config.appUrl);
-const app = createApp({ store, events, markets, oauth, xBots, sessions, cronSecret: config.cronSecret });
+const app = createApp({
+  store,
+  events,
+  markets,
+  oauth,
+  xBots,
+  sessions,
+  cronSecret: config.cronSecret,
+  xWebhookConsumerSecret: config.xWebhookConsumerSecret,
+});
 const demoPulse = new DemoMarketPulse(store, markets);
 demoPulse.start();
 

@@ -5,6 +5,7 @@ import type { MarketStore } from "../infrastructure/store.js";
 import { XApiClient } from "../integrations/x-client.js";
 import { BotRegistry } from "../integrations/x-oauth.js";
 import { MarketService } from "./market-service.js";
+import { accountActivityMentions } from "./x-webhook.js";
 
 const COMMAND = /\bmarket\s+this\b/i;
 
@@ -30,6 +31,8 @@ function marketReply(created: boolean, question: string, yesPrice: number, marke
 }
 
 export class XBotService {
+  private readonly pendingMentionIds = new Set<string>();
+
   constructor(
     private readonly store: MarketStore,
     private readonly bots: BotRegistry,
@@ -47,19 +50,48 @@ export class XBotService {
     let replies = 0;
     let failures = 0;
     for (const mention of chronological) {
-      if (await this.store.isMentionProcessed(mention.id)) continue;
+      const result = await this.processMention(mention, client);
+      processed += result.processed ? 1 : 0;
+      replies += result.replied ? 1 : 0;
+      failures += result.failed ? 1 : 0;
+    }
+    return { configured: true, processed, replies, failures };
+  }
+
+  /**
+   * Accepts a signed Account Activity payload and queues its mentions after
+   * returning HTTP 202. X requires a fast acknowledgement; the potentially
+   * slower Grok market-creation call must not keep the webhook request open.
+   */
+  acceptAccountActivity(payload: unknown): { configured: boolean; accepted: number } {
+    const bot = this.bots.get();
+    if (!bot) return { configured: false, accepted: 0 };
+    const mentions = accountActivityMentions(payload, bot.userId);
+    const client = new XApiClient(bot.accessToken);
+    for (const mention of mentions) {
+      queueMicrotask(() => {
+        void this.processMention(mention, client).catch((error) => {
+          console.error(`X webhook mention ${mention.id} failed`, error);
+        });
+      });
+    }
+    return { configured: true, accepted: mentions.length };
+  }
+
+  private async processMention(mention: XPost, client: XApiClient): Promise<{ processed: boolean; replied: boolean; failed: boolean }> {
+    if (this.pendingMentionIds.has(mention.id)) return { processed: false, replied: false, failed: false };
+    this.pendingMentionIds.add(mention.id);
+    try {
+      if (await this.store.isMentionProcessed(mention.id)) return { processed: false, replied: false, failed: false };
       if (!COMMAND.test(mention.text)) {
         await this.store.markMentionProcessed(mention.id);
-        processed += 1;
-        continue;
+        return { processed: true, replied: false, failed: false };
       }
       try {
         const replyId = await this.openMarketFromMention(client, mention);
         await this.store.markMentionProcessed(mention.id, replyId);
-        processed += 1;
-        replies += 1;
+        return { processed: true, replied: true, failed: false };
       } catch (error) {
-        failures += 1;
         // A bad/ambiguous post should get one useful response, but do not leak
         // API diagnostics or credentials to X.
         const message = error instanceof AppError && error.code === "EXTRACTION_UNAVAILABLE"
@@ -68,14 +100,16 @@ export class XBotService {
         try {
           const replyId = await client.postReply(mention.id, replyText(message));
           await this.store.markMentionProcessed(mention.id, replyId);
-          processed += 1;
-          replies += 1;
+          return { processed: true, replied: true, failed: true };
         } catch {
-          // Do not mark it processed: a scheduler retry can recover a failed reply.
+          // Polling can retry this later; webhook failures are logged so X's
+          // replay API can be used to redeliver a bounded missed window.
+          return { processed: false, replied: false, failed: true };
         }
       }
+    } finally {
+      this.pendingMentionIds.delete(mention.id);
     }
-    return { configured: true, processed, replies, failures };
   }
 
   private async openMarketFromMention(client: XApiClient, mention: XPost): Promise<string> {
