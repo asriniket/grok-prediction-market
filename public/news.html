@@ -222,6 +222,38 @@
                align-items:center;justify-content:center;font-size:32px}
   .unmute .t{font-size:18px;font-weight:800;letter-spacing:.04em}
   .unmute .s{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.16em;text-transform:uppercase}
+
+  /* The broadcast still reads as a TV frame on a phone, but no chrome is
+     allowed to spill beyond the viewport or cover the primary video. */
+  @media (max-width:760px){
+    body,.tv{height:100dvh;min-height:100dvh}
+    .strip{height:32px}.brandbox{padding:0 10px;font-size:14px}.livebox{padding:0 9px;font-size:10px;letter-spacing:.13em}
+    .stripscroll{line-height:32px}.sitem{font-size:11px}.clock{padding:0 10px;font-size:11px}.clock .tz{display:none}
+    .shot.squeeze #idle,.shot.squeeze #talk,.shot.squeeze #poster{right:0;width:100%;left:0}
+    .rail.on{display:none}
+    .bug{right:9px;bottom:8px;padding:4px 7px;font-size:11px}.bug .tm{display:none}
+    .twobox{background:radial-gradient(120% 90% at 50% -10%,#24221e 0%,#131211 55%,#060605 100%)}
+    .tb-top{left:12px;right:12px;top:10px;height:42px}.tb-flag{padding:0 10px;font-size:11px;letter-spacing:.1em}.tb-q{padding:0 10px;font-size:11.5px}.tb-price{padding:0 9px;font-size:14px}
+    .tb-grid{inset:62px 12px 12px;grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr);gap:10px}
+    .tb-strap{gap:7px;padding:6px 8px}.tb-strap .who{font-size:13px}.tb-strap .pos{font-size:9px;padding:2px 5px}.tb-mic{font-size:8px}
+    .ots{top:12px;right:12px;left:12px;width:auto;max-width:none}.ots.big{top:12px;right:12px;bottom:12px;left:12px}.ots .body{padding:10px 11px 11px}.ots .big2{font-size:48px}.ots.big .q{font-size:16px}.ots.big .chg{font-size:18px}
+    .fullboard{inset:12px;gap:9px}.fb-head{gap:9px}.fb-head .flag{padding:7px 10px;font-size:10px}.fb-head .sub{font-size:9px;letter-spacing:.12em}.fb-grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.fb-card{padding:9px 10px}.fb-card .fq{font-size:12px}.fb-card .fp b{font-size:22px}
+    .lower{height:60px}.badge{min-width:108px;padding:0 11px}.badge .k1{font-size:13px}.badge .k2{font-size:8px;letter-spacing:.16em}.headline{padding:0 12px;font-size:15px}.headline.long{font-size:13px}.statblk{display:none}
+    .row{height:26px}.rowscroll{line-height:26px;font-size:11px}.titem{margin-right:24px}
+    .sting{gap:10px}.sting .nm{font-size:38px}.sting .sub{font-size:9px;letter-spacing:.25em}.brk .band{top:30%;padding:12px 16px}.brk .band .t{font-size:10px;letter-spacing:.24em}.brk .band .l{font-size:17px}.brk .mv{top:calc(30% + 89px);font-size:23px;gap:10px}
+    .quote{font-size:15px;padding-left:11px}.bigline{font-size:22px}.unmute .ico{width:60px;height:60px;font-size:25px}.unmute .t{font-size:16px}.unmute .s{font-size:9px}
+  }
+  @media (max-width:460px){
+    .stripwrap{display:none}.clock{margin-left:auto}.tb-price{display:none}.tb-q{border-right:1px solid var(--line)}
+    .ots h4{padding:8px 10px;font-size:9px}.ots .q{font-size:12px}.ots .big2{font-size:40px}.ots .chg{font-size:13px}
+    .fullboard{inset:9px}.fb-head .sub{display:none}.fb-grid{grid-template-columns:1fr 1fr}.fb-card .sym{font-size:9px}.fb-card .fp b{font-size:19px}
+    .lower{height:56px}.badge{min-width:94px;padding:0 9px}.badge .k1{font-size:12px}.headline{padding:0 10px;font-size:13px}.headline.long{font-size:12px}.row{height:24px}.rowscroll{line-height:24px;font-size:10px}
+  }
+  @media (max-width:760px) and (orientation:landscape){
+    .tb-grid{inset:55px 3% 3%;grid-template-columns:1fr 1fr;grid-template-rows:1fr;gap:12px}.tb-top{left:3%;right:3%;top:8px;height:38px}
+    .lower{height:52px}.row{height:22px}.rowscroll{line-height:22px}.bug{bottom:6px}
+  }
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
   .hidden{display:none!important}
 </style>
 </head>
