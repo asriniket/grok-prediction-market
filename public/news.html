@@ -384,6 +384,52 @@ function tone(freq,at,dur,type,gain,glideTo){
   g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
   o.connect(g).connect(c.destination); o.start(t0); o.stop(t0+dur+.05);
 }
+/* ---------------------------------------------------------------- music bed
+   A synthesized news-pulse (Am–F–C–G, 104 BPM: soft bass, plucked arp, airy
+   pad) that lives UNDER the whole program. It swells when the channel is on
+   graphics — the board, stings — and ducks to a whisper under speech, so the
+   stream never goes dead silent. Synthesis over a music file: nothing to
+   license, nothing to load, and the encoder captures it like any page audio. */
+const bed={gain:null,lp:null,timer:null,step:0,next:0,target:0};
+const BED_CHORDS=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
+const mtof=(m)=>440*Math.pow(2,(m-69)/12);
+function bedTone(f,t,d,type,g,att){
+  const c=ac(),o=c.createOscillator(),gn=c.createGain();
+  o.type=type;o.frequency.value=f;
+  gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(g,t+(att||0.012));
+  gn.gain.exponentialRampToValueAtTime(0.001,t+d);
+  o.connect(gn);gn.connect(bed.gain);o.start(t);o.stop(t+d+0.1);
+}
+function bedStep(t,s){
+  const chord=BED_CHORDS[Math.floor(s/16)%4];
+  if(s%8===0) bedTone(mtof(chord[0]-24),t,0.95,'sine',0.5);
+  const pat=[0,2,1,2,0,1,2,1];
+  if(s%2===0) bedTone(mtof(chord[pat[(s>>1)%8]]),t,0.22,'triangle',0.30);
+  if(s%16===0) chord.forEach(n=>bedTone(mtof(n),t,3.4,'sawtooth',0.045,1.4));
+}
+function bedStart(){
+  if(bed.gain||!soundOn)return;
+  const c=ac();
+  bed.gain=c.createGain();bed.gain.gain.value=0;
+  bed.lp=c.createBiquadFilter();bed.lp.type='lowpass';bed.lp.frequency.value=1500;
+  bed.gain.connect(bed.lp);bed.lp.connect(c.destination);
+  bed.next=c.currentTime+0.15;bed.step=0;
+  const spb=60/104/2;
+  bed.timer=setInterval(()=>{
+    const now=ac().currentTime;
+    while(bed.next<now+0.35){bedStep(bed.next,bed.step);bed.next+=spb;bed.step=(bed.step+1)%64;}
+  },120);
+  bedLevel(bed.target||0.15);
+}
+/** 0..1 → bed presence. 1 = graphics-only swell, ~0.12 = whisper under speech. */
+function bedLevel(x){
+  bed.target=x;
+  if(!bed.gain){bedStart();return;}
+  const g=bed.gain.gain,c=ac();
+  g.cancelScheduledValues(c.currentTime);
+  g.linearRampToValueAtTime(x*0.085,c.currentTime+0.9);
+}
+
 /** Broadcast sting: a low impact under a rising three-note motif. */
 function stingSound(){ if(!soundOn)return;
   tone(587.33,0,.1,'triangle',.09); tone(880,.1,.1,'triangle',.09);
@@ -418,6 +464,7 @@ $('unmute').addEventListener('click',()=>{
   $('unmute').classList.add('hidden');
   ac().resume().catch(()=>{});
   routeAudio();
+  bedStart();
   for(const el of [$('talk'),$('tbLeftVid'),$('tbRightVid')]){ el.muted=false; }
   // Unlock the elements by playing inside the gesture.
   $('talk').play().catch(()=>{});
@@ -807,7 +854,7 @@ function showBreaking(s){
 /* ------------------------------------------------------------------ apply */
 function apply(msg){
   if(msg.serverNow) clockSkew=msg.serverNow-Date.now();
-  if(PROGRAM&&!busReady) routeAudio();
+  if(PROGRAM&&!busReady){ routeAudio(); bedStart(); }
   if(msg.preload){ prefetch(msg.preload.videoUrl); prefetch(msg.preload.audioPath); return; }
   if(msg.idleUrl && !idleReady){
     const i=$('idle'); i.src=msg.idleUrl;
@@ -822,8 +869,8 @@ function apply(msg){
   const s=msg.segment;
   if(!s){ renderOts(false); return; }
 
-  if(s.kind==='sting'){ hideOverlays(); toIdle(); showSting(s.badge,s.at); return; }
-  if(s.kind==='breaking'){ showBreaking(s); return; }
+  if(s.kind==='sting'){ hideOverlays(); toIdle(); bedLevel(1); showSting(s.badge,s.at); return; }
+  if(s.kind==='breaking'){ bedLevel(0.3); showBreaking(s); return; }
 
   if(s.kind==='beat'){
     focusId=s.marketId||focusId;
@@ -864,7 +911,8 @@ function apply(msg){
       else renderOts(big);
     };
 
-    if(over){ toIdle(); graphic(false); return; }
+    if(over){ toIdle(); graphic(false); bedLevel(0.6); return; }
+    bedLevel(0.12);  // speech has the air; the bed drops to a whisper
     if(s.videoUrl){ graphic(false); $('scrim').classList.remove('on'); toTalk(s.videoUrl,s.at); }   // on camera → graphic rides beside, never a dimmer
     else { toIdle(); graphic(true); playVO(s.audioPath,s.at); }  // VO → graphic takes the frame
     return;
@@ -875,6 +923,7 @@ function apply(msg){
     hideOverlays();
     toIdle();
     renderFullboard();
+    bedLevel(1);   // graphics have the air — the bed carries the board
     setLower('The board','Live odds across the book.',true);
   }
 }
