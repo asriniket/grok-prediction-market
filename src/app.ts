@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z, ZodError } from "zod";
 import { AppError } from "./domain/errors.js";
+import { outcomePrice } from "./domain/lmsr.js";
 import type { Outcome } from "./domain/types.js";
 import type { MarketStore } from "./infrastructure/store.js";
 import { XOAuthService } from "./integrations/x-oauth.js";
@@ -116,7 +117,12 @@ export function createApp(dependencies: AppDependencies) {
 
   app.get(["/", "/markets"], asyncRoute(async (request, response) => {
     const markets = await dependencies.store.listMarkets(50);
-    const snapshots = await Promise.all(markets.map((market) => dependencies.store.getMarketSnapshot(market.id)));
+    // The index displays only current prices. Loading a 120-point history for
+    // every card would be invisible work and scales linearly with market count.
+    const snapshots = markets.map((market) => {
+      const state = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
+      return { market, priceYes: outcomePrice(state, "YES"), priceNo: outcomePrice(state, "NO") };
+    });
     const linkedUserId = sessionUserId(request, dependencies.sessions);
     const viewer = linkedUserId ? await dependencies.store.getAccount(linkedUserId) : null;
     response.type("html").send(marketIndexPage(snapshots, viewer));
@@ -177,7 +183,8 @@ export function createApp(dependencies: AppDependencies) {
     // A position is private to the locally linked X account. Do not trust a
     // caller-supplied user ID to select another person's wallet or position.
     const userId = sessionUserId(request, dependencies.sessions) ?? undefined;
-    response.json(await dependencies.store.getMarketSnapshot(String(request.params.marketId), userId));
+    const { snapshot, history } = await dependencies.store.getMarketSnapshotWithHistory(String(request.params.marketId), userId);
+    response.json({ ...snapshot, history });
   }));
 
   app.get("/api/markets/:marketId/history", asyncRoute(async (request, response) => {
@@ -229,12 +236,11 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/markets/:marketId", asyncRoute(async (request, response) => {
     const linkedUserId = sessionUserId(request, dependencies.sessions);
     const marketId = String(request.params.marketId);
-    const [snapshot, account, history] = await Promise.all([
-      dependencies.store.getMarketSnapshot(marketId, linkedUserId ?? undefined),
+    const [marketData, account] = await Promise.all([
+      dependencies.store.getMarketSnapshotWithHistory(marketId, linkedUserId ?? undefined),
       linkedUserId ? dependencies.store.getAccount(linkedUserId) : Promise.resolve(null),
-      dependencies.store.getPriceHistory(marketId),
     ]);
-    response.type("html").send(marketPage(snapshot, account, history, Boolean(linkedUserId)));
+    response.type("html").send(marketPage(marketData.snapshot, account, marketData.history, Boolean(linkedUserId)));
   }));
 
   app.get("/portfolio", asyncRoute(async (request, response) => {

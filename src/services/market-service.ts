@@ -157,7 +157,10 @@ export class MarketService {
     this.events.publish({
       type: "market.demo.pulse",
       marketId,
-      payload: { ...pulse, metrics: await this.store.getMarketMetrics(marketId), demo: true },
+      // Current subscribers use the pulse and market ID to refresh. Calculating
+      // a second 120-point history window for an otherwise unused event field
+      // adds database egress without changing the rendered experience.
+      payload: { ...pulse, demo: true },
     });
     return pulse;
   }

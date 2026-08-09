@@ -384,15 +384,27 @@ export class SqliteStore {
   }
 
   getMarketSnapshot(marketId: string, userId?: string): MarketSnapshot {
+    return this.getMarketSnapshotWithHistory(marketId, userId, 120).snapshot;
+  }
+
+  getMarketSnapshotWithHistory(
+    marketId: string,
+    userId?: string,
+    historyLimit = 240,
+  ): { snapshot: MarketSnapshot; history: MarketPricePoint[] } {
     const market = this.getMarket(marketId);
     if (!market) throw new NotFoundError("Market not found");
+    const history = this.getPriceHistory(marketId, historyLimit);
     const state: AmmState = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
     return {
-      market,
-      priceYes: outcomePrice(state, "YES"),
-      priceNo: outcomePrice(state, "NO"),
-      position: userId ? this.getPosition(marketId, userId) : null,
-      metrics: this.getMarketMetrics(marketId),
+      snapshot: {
+        market,
+        priceYes: outcomePrice(state, "YES"),
+        priceNo: outcomePrice(state, "NO"),
+        position: userId ? this.getPosition(marketId, userId) : null,
+        metrics: this.metricsForMarket(market, history.slice(-120)),
+      },
+      history,
     };
   }
 
@@ -418,10 +430,15 @@ export class SqliteStore {
   }
 
   getMarketMetrics(marketId: string): MarketMetrics {
-    const points = this.getPriceHistory(marketId, 120);
+    const market = this.getMarket(marketId);
+    if (!market) throw new NotFoundError("Market not found");
+    return this.metricsForMarket(market, this.getPriceHistory(marketId, 120));
+  }
+
+  private metricsForMarket(market: Market, points: MarketPricePoint[]): MarketMetrics {
     const moves = points.slice(1).map((point, index) => Math.abs(point.priceYes - points[index].priceYes));
     return {
-      liquidityDepth: this.getMarket(marketId)!.liquidityB,
+      liquidityDepth: market.liquidityB,
       volatility: moves.length === 0 ? 0 : moves.reduce((total, movement) => total + movement, 0) / moves.length,
       activityCount: Math.max(0, points.length - 1),
       demoActivityCount: points.filter((point) => point.kind === "DEMO").length,

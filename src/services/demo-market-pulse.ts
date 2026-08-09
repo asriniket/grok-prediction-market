@@ -1,4 +1,5 @@
 import type { Outcome } from "../domain/types.js";
+import { outcomePrice } from "../domain/lmsr.js";
 import { MarketService } from "./market-service.js";
 import type { MarketStore } from "../infrastructure/store.js";
 
@@ -103,12 +104,20 @@ export class DemoMarketPulse {
     this.inFlight.add(marketId);
     let state = this.states.get(marketId);
     try {
-      const snapshot = await this.store.getMarketSnapshot(marketId);
-      if (snapshot.market.status !== "OPEN" || new Date(snapshot.market.closesAt) <= new Date()) {
+      // The simulator needs only the current AMM state. A full snapshot also
+      // loads recent chart points for metrics, which are not used here and
+      // would add egress on every simulated tick.
+      const market = await this.store.getMarket(marketId);
+      if (!market || market.status !== "OPEN" || new Date(market.closesAt) <= new Date()) {
         this.states.delete(marketId);
         return;
       }
-      const currentLogit = logit(snapshot.priceYes);
+      const currentPrice = outcomePrice({
+        liquidityB: market.liquidityB,
+        yesShares: market.yesShares,
+        noShares: market.noShares,
+      }, "YES");
+      const currentLogit = logit(currentPrice);
       state ??= {
         fairLogit: currentLogit,
         orderImbalance: 0,
@@ -130,7 +139,7 @@ export class DemoMarketPulse {
       const move = clamp(state.orderImbalance + normal() * volatility * 0.28, -0.19, 0.19);
       const nextLogit = clamp(currentLogit + move, logit(MIN_PRICE), logit(MAX_PRICE));
       const outcome: Outcome = nextLogit >= currentLogit ? "YES" : "NO";
-      const shares = Math.max(1.2, Math.abs(nextLogit - currentLogit) * snapshot.market.liquidityB);
+      const shares = Math.max(1.2, Math.abs(nextLogit - currentLogit) * market.liquidityB);
       const pulse = await this.markets.applyDemoFlow(marketId, outcome, shares);
       if (!pulse) {
         this.states.delete(marketId);

@@ -491,19 +491,34 @@ export class PostgresStore {
   }
 
   async getMarketSnapshot(marketId: string, userId?: string): Promise<MarketSnapshot> {
+    return (await this.getMarketSnapshotWithHistory(marketId, userId, 120)).snapshot;
+  }
+
+  /**
+   * Reads a market page's snapshot and chart from one history window. Metrics
+   * deliberately use the newest 120 points, matching getMarketSnapshot.
+   */
+  async getMarketSnapshotWithHistory(
+    marketId: string,
+    userId?: string,
+    historyLimit = 240,
+  ): Promise<{ snapshot: MarketSnapshot; history: MarketPricePoint[] }> {
     const market = await this.getMarket(marketId);
     if (!market) throw new NotFoundError("Market not found");
     const [points, position] = await Promise.all([
-      this.priceHistoryForMarket(market, 120),
+      this.priceHistoryForMarket(market, historyLimit),
       userId ? this.getPosition(marketId, userId) : Promise.resolve(null),
     ]);
     const state: AmmState = { liquidityB: market.liquidityB, yesShares: market.yesShares, noShares: market.noShares };
     return {
-      market,
-      priceYes: outcomePrice(state, "YES"),
-      priceNo: outcomePrice(state, "NO"),
-      position,
-      metrics: this.metricsForMarket(market, points),
+      snapshot: {
+        market,
+        priceYes: outcomePrice(state, "YES"),
+        priceNo: outcomePrice(state, "NO"),
+        position,
+        metrics: this.metricsForMarket(market, points.slice(-120)),
+      },
+      history: points,
     };
   }
 
