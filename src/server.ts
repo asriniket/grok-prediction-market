@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { GrokClaimExtractor, UnavailableClaimExtractor } from "./services/claim-extractor.js";
 import { GrokMarketAnalysisGenerator, UnavailableMarketAnalysisGenerator } from "./services/market-analysis.js";
 import { GrokMarketSummaryGenerator, UnavailableMarketSummaryGenerator } from "./services/market-summary.js";
+import { GrokMarketResolver, UnavailableMarketResolver } from "./services/market-resolution.js";
 import { EventBus } from "./services/event-bus.js";
 import { MarketService } from "./services/market-service.js";
 import { PostgresStore } from "./infrastructure/postgres-store.js";
@@ -25,7 +26,10 @@ const summaries = config.xaiApiKey
 const analyses = config.xaiApiKey
   ? new GrokMarketAnalysisGenerator(config.xaiApiKey, config.xaiModel)
   : new UnavailableMarketAnalysisGenerator();
-const markets = new MarketService(store, extractor, events, summaries, analyses);
+const resolver = config.xaiApiKey
+  ? new GrokMarketResolver(config.xaiApiKey, config.xaiModel)
+  : new UnavailableMarketResolver();
+const markets = new MarketService(store, extractor, events, summaries, analyses, resolver);
 const sessions = new SessionStore();
 const bots = new BotRegistry(
   (await store.getBotCredentials())

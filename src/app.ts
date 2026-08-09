@@ -54,6 +54,17 @@ function sessionUserId(request: Request, sessions: SessionStore): string | null 
   return sessions.getUserId(readCookie(request, "threadline_session"));
 }
 
+function requireSettlementAuthorization(request: Request, cronSecret?: string): void {
+  // Settlement changes every holder's balance. It must never be exposed as a
+  // public HTTP action, including in a local hackathon environment.
+  if (!cronSecret) {
+    throw new AppError("Set CRON_SECRET before enabling market settlement", 503, "SETTLEMENT_NOT_CONFIGURED");
+  }
+  if (request.get("authorization") !== `Bearer ${cronSecret}`) {
+    throw new AppError("Unauthorized", 401, "UNAUTHORIZED");
+  }
+}
+
 function safeReturnTo(value: unknown): string {
   if (value === "/portfolio") return value;
   return typeof value === "string" && /^\/markets\/[0-9a-f-]{36}$/i.test(value) ? value : "/";
@@ -148,7 +159,11 @@ export function createApp(dependencies: AppDependencies) {
   app.post("/api/markets/:marketId/trades", asyncRoute(async (request, response) => {
     const userId = sessionUserId(request, dependencies.sessions);
     if (!userId) throw new AppError("Link your X account before trading", 401, "X_ACCOUNT_NOT_LINKED");
-    const body = z.object({ outcome: outcomeSchema, credits: z.number().finite().positive() }).parse(request.body);
+    const body = z.object({
+      outcome: outcomeSchema,
+      credits: z.number().finite().positive(),
+      idempotencyKey: z.string().uuid().optional(),
+    }).parse(request.body);
     const trade = await dependencies.markets.trade({ marketId: String(request.params.marketId), userId, ...body });
     response.status(201).json({ trade, snapshot: await dependencies.store.getMarketSnapshot(String(request.params.marketId), userId) });
   }));
@@ -156,12 +171,17 @@ export function createApp(dependencies: AppDependencies) {
   app.post("/api/markets/:marketId/sells", asyncRoute(async (request, response) => {
     const userId = sessionUserId(request, dependencies.sessions);
     if (!userId) throw new AppError("Link your X account before trading", 401, "X_ACCOUNT_NOT_LINKED");
-    const body = z.object({ outcome: outcomeSchema, shares: z.number().finite().positive() }).parse(request.body);
+    const body = z.object({
+      outcome: outcomeSchema,
+      shares: z.number().finite().positive(),
+      idempotencyKey: z.string().uuid().optional(),
+    }).parse(request.body);
     const trade = await dependencies.markets.sell({ marketId: String(request.params.marketId), userId, ...body });
     response.status(201).json({ trade, snapshot: await dependencies.store.getMarketSnapshot(String(request.params.marketId), userId) });
   }));
 
   app.post("/api/markets/:marketId/resolve", asyncRoute(async (request, response) => {
+    requireSettlementAuthorization(request, dependencies.cronSecret);
     const body = z.object({ outcome: outcomeSchema.nullable(), sources: z.array(z.string().url()).max(10) }).parse(request.body);
     const market = await dependencies.markets.resolve({ marketId: String(request.params.marketId), outcome: body.outcome as Outcome | null, sources: body.sources });
     response.json({ market, snapshot: await dependencies.store.getMarketSnapshot(market.id) });
@@ -214,6 +234,20 @@ export function createApp(dependencies: AppDependencies) {
       throw new AppError("Unauthorized", 401, "UNAUTHORIZED");
     }
     response.json(await dependencies.xBots.poll());
+  }));
+
+  app.post("/internal/jobs/resolve-markets", asyncRoute(async (request, response) => {
+    requireSettlementAuthorization(request, dependencies.cronSecret);
+    const body = z.object({
+      marketId: z.string().uuid().optional(),
+      limit: z.number().int().min(1).max(50).optional(),
+    }).catch({}).parse(request.body);
+    if (body.marketId) {
+      const result = await dependencies.markets.resolveWithGrok(body.marketId);
+      response.json(result);
+      return;
+    }
+    response.json(await dependencies.markets.resolveDueMarkets(body.limit ?? 20));
   }));
 
   app.get("/events", (request, response) => {

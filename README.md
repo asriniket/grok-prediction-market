@@ -31,22 +31,24 @@ to use structured Grok extraction and X credentials to enable the live bot.
 | `GET /api/markets/:marketId` | Market state, LMSR price, and the caller's position. |
 | `POST /api/markets/:marketId/trades` | Spend non-transferable karma credits on YES or NO. |
 | `POST /api/markets/:marketId/sells` | Sell held YES or NO shares back to the LMSR for current proceeds. |
-| `POST /api/markets/:marketId/resolve` | Resolve YES/NO or mark unresolvable. |
+| `POST /api/markets/:marketId/resolve` | Authorized manual YES/NO or unresolvable settlement with source URLs. |
 | `GET /api/accounts/:xUserId` | Get/create a karma account from public-history inputs. |
 | `GET /api/me` | Read the locally linked X trader wallet. |
 | `GET /auth/x/start` | Authorize the market bot with OAuth 2.0 + PKCE. |
 | `GET /auth/x/connect/start` | Link a trader's X account and seed their karma wallet. |
 | `POST /internal/jobs/poll-x` | Poll bot mentions and reply to “market this”. |
+| `POST /internal/jobs/resolve-markets` | Run Grok's source-backed settlement pass for one due market or a bounded due-market batch. |
 | `GET /events` | SSE feed for the video/debate layer. |
 
 The local market page uses a short-lived session after a trader links their X
 account. Viewing markets is public, but buy and sell routes use that server-side
 session and never accept a caller-supplied wallet ID. Each X user ID maps to one
 local Threadline Karma account, so its balance and open positions persist across
-all Threadline markets while the local SQLite database is retained. Removing the
-local database resets the hackathon demo state.
-`/internal/jobs/poll-x` requires `Authorization: Bearer $CRON_SECRET` when the
-secret is configured.
+all Threadline markets in the configured Postgres database. The settlement
+routes (`/api/markets/:marketId/resolve` and `/internal/jobs/resolve-markets`)
+always require `Authorization: Bearer $CRON_SECRET`; they remain disabled until
+that secret is configured. The polling route uses the same header when a secret
+is configured.
 
 ## X setup
 
@@ -59,10 +61,15 @@ secret is configured.
 4. Schedule `POST /internal/jobs/poll-x` every minute. The endpoint uses the
    mentions timeline, creates a market only for messages containing
    `market this`, and replies once with the market URL.
+5. Schedule `POST /internal/jobs/resolve-markets` every few minutes after a
+   market closes. Grok first searches the web and X, then may settle only with
+   high-confidence, cited evidence. A `PENDING` result leaves the market open
+   and pays nobody; an authorized manual resolution remains available for
+   exceptional cases.
 
-The OAuth callback saves bot tokens in the local, git-ignored SQLite database
-for the hackathon. For a production deployment, replace this with encrypted
-persistent refresh-token storage in a managed secret store.
+The OAuth callback saves bot tokens in the configured Postgres database for the
+hackathon. For a production deployment, move refresh tokens to encrypted
+persistent storage in a managed secret store.
 
 ## Market design
 
@@ -70,9 +77,12 @@ Trades use a binary LMSR automated market maker. Users choose a credit budget;
 the engine solves for the number of outcome shares that budget buys. Holders can
 also sell any portion of the shares they own at the current AMM price; proceeds
 reflect market movement and slippage. It never allows negative balances or short
-positions. On YES/NO resolution, each winning remaining share pays one credit.
-An **unresolvable** market refunds a trader's remaining positive net spend and
-does not alter calibration.
+positions. Each trade accepts a UUID idempotency key, so a network retry returns
+the original trade instead of moving the book twice. On YES/NO resolution, each
+winning remaining share pays one credit. An **unresolvable** market refunds a
+trader's remaining positive net spend and does not alter calibration. Settlement
+records the immutable payout then clears every position, preventing a resolved
+market from being paid or sold twice.
 
 For the local hackathon view, the server also emits a small **clearly labeled
 demo market pulse** every 12 seconds. These points are marked `DEMO` in the

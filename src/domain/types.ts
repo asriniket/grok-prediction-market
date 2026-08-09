@@ -97,6 +97,8 @@ export interface Trade {
   shares: number;
   priceAfter: number;
   executedAt: string;
+  /** Replaying the same request key returns this trade without moving the book twice. */
+  idempotencyKey?: string;
 }
 
 export interface MarketPricePoint {
