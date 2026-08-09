@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import { createApp, type AppDependencies } from "../src/app.js";
-import { crcResponseToken, hasValidWebhookSignature, xWebhookMentions } from "../src/services/x-webhook.js";
+import { crcResponseToken, hasValidWebhookSignature, xActivityMentions } from "../src/services/x-webhook.js";
 
 describe("X webhook helpers", () => {
   it("creates the documented CRC token and verifies only the exact signed bytes", () => {
@@ -12,45 +12,6 @@ describe("X webhook helpers", () => {
     const signature = crcResponseToken(secret, rawBody.toString("utf8"));
     expect(hasValidWebhookSignature(secret, rawBody, signature)).toBe(true);
     expect(hasValidWebhookSignature(secret, Buffer.from('{"for_user_id":"2"}'), signature)).toBe(false);
-  });
-
-  it("normalizes mention events and ignores the subscribed bot's own posts", () => {
-    const payload = {
-      for_user_id: "2086271258564739072",
-      tweet_create_events: [
-        {
-          id_str: "2087000000000000001",
-          created_at: "Fri Aug 08 21:00:00 +0000 2026",
-          text: "@ThreadlineBot market this",
-          in_reply_to_status_id_str: "2086000000000000001",
-          user: { id_str: "111", screen_name: "maker" },
-        },
-        {
-          id_str: "2087000000000000002",
-          text: "MARKET THIS https://t.co/example",
-          user: { id_str: "222", screen_name: "linker" },
-          extended_tweet: {
-            full_text: "@ThreadlineBot market this https://t.co/example",
-            entities: { urls: [{ expanded_url: "https://x.com/source/status/2086000000000000002" }] },
-          },
-        },
-        {
-          id_str: "2087000000000000003",
-          text: "MARKET THIS",
-          user: { id_str: "2086271258564739072", screen_name: "ThreadlineBot" },
-        },
-      ],
-    };
-
-    expect(xWebhookMentions(payload, "2086271258564739072")).toEqual([
-      expect.objectContaining({ id: "2087000000000000001", authorId: "111", repliedToPostId: "2086000000000000001" }),
-      expect.objectContaining({
-        id: "2087000000000000002",
-        authorId: "222",
-        text: expect.stringContaining("https://x.com/source/status/2086000000000000002"),
-      }),
-    ]);
-    expect(xWebhookMentions({ for_user_id: "999", tweet_create_events: payload.tweet_create_events }, "2086271258564739072")).toEqual([]);
   });
 
   it("normalizes current X Activity post.mention.create events", () => {
@@ -70,7 +31,7 @@ describe("X webhook helpers", () => {
         includes: { users: [{ id: "333", username: "maker" }] },
       },
     };
-    expect(xWebhookMentions(payload, "2086271258564739072")).toEqual([
+    expect(xActivityMentions(payload, "2086271258564739072")).toEqual([
       expect.objectContaining({
         id: "2087000000000000004",
         authorId: "333",
@@ -78,7 +39,8 @@ describe("X webhook helpers", () => {
         repliedToPostId: "2086000000000000003",
       }),
     ]);
-    expect(xWebhookMentions({ data: { ...payload.data, filter: { user_id: "999" } } }, "2086271258564739072")).toEqual([]);
+    expect(xActivityMentions({ data: { ...payload.data, filter: { user_id: "999" } } }, "2086271258564739072")).toEqual([]);
+    expect(xActivityMentions({ for_user_id: "2086271258564739072", tweet_create_events: [] }, "2086271258564739072")).toEqual([]);
   });
 });
 
